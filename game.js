@@ -384,7 +384,7 @@ document.addEventListener('pointerlockchange', () => {
   isLocked = document.pointerLockElement === renderer.domElement;
   const hint = document.getElementById('hint');
   if (hint) hint.textContent = isLocked
-    ? 'WASD to move  ·  mouse to look  ·  walk into a portal to travel'
+    ? 'WASD to move  ·  Shift to sprint  ·  Space to jump  ·  walk into a portal to travel'
     : 'Click to capture mouse';
 });
 
@@ -411,8 +411,14 @@ window.addEventListener('resize', () => {
 // Game loop
 // ------------------------------------------------------------------
 
-const SPEED      = incoming.speed || 5;
-const BOUNDS     = 38;
+const SPEED        = incoming.speed || 5;
+const SPRINT_MULT  = 2.2;
+const JUMP_FORCE   = 8;
+const GRAVITY      = 20;
+const BOUNDS       = 38;
+
+let velY = 0;      // vertical velocity for jump/gravity
+let onGround = true;
 const CAM_DIST   = 5;
 const CAM_HEIGHT = 2.5;
 
@@ -439,15 +445,32 @@ function loop(now) {
   if (keys['d'] || keys['arrowright']) _dir.x += 1;
 
   isMoving = _dir.lengthSq() > 0;
+  const isSprinting = keys['shift'];
+  const speed = SPEED * (isSprinting ? SPRINT_MULT : 1);
+
   if (isMoving) {
     _dir.normalize().applyEuler(_euler);
-    playerGroup.position.x += _dir.x * SPEED * dt;
-    playerGroup.position.z += _dir.z * SPEED * dt;
+    playerGroup.position.x += _dir.x * speed * dt;
+    playerGroup.position.z += _dir.z * speed * dt;
     playerGroup.rotation.y  = Math.atan2(_dir.x, _dir.z);
   }
 
-  // Local limb swing
-  const swing = isMoving ? Math.sin(time * 8) * 0.5 : 0;
+  // Jump
+  if (keys[' '] && onGround) {
+    velY = JUMP_FORCE;
+    onGround = false;
+  }
+  velY -= GRAVITY * dt;
+  playerGroup.position.y += velY * dt;
+  if (playerGroup.position.y <= 0) {
+    playerGroup.position.y = 0;
+    velY = 0;
+    onGround = true;
+  }
+
+  // Local limb swing — faster when sprinting
+  const swingSpeed = isSprinting ? 13 : 8;
+  const swing = isMoving ? Math.sin(time * swingSpeed) * 0.5 : 0;
   leftLeg.rotation.x  =  swing;
   rightLeg.rotation.x = -swing;
   leftArm.rotation.x  = -swing * 0.6;
