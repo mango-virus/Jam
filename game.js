@@ -399,6 +399,14 @@ async function setupMultiplayer() {
     room = joinRoom({ appId: 'ordinary-game-jam-3d-space' }, 'main-room');
     const [send, getState] = room.makeAction('state');
     sendState = send;
+    const [sPunch, onPunch] = room.makeAction('punch');
+    sendPunch = sPunch;
+    onPunch(({ kx, kz }) => {
+      velX = kx * KNOCKBACK_H;
+      velZ = kz * KNOCKBACK_H;
+      velY = Math.max(velY, KNOCKBACK_UP);
+      onGround = false;
+    });
 
     room.onPeerJoin(() => { broadcastSelf(); refreshPeerCount(); });
     room.onPeerLeave(id => { removePeer(id); refreshPeerCount(); });
@@ -461,6 +469,10 @@ document.addEventListener('mousemove', e => {
   pitch  = Math.max(-0.6, Math.min(0.8, pitch));
 });
 
+document.addEventListener('mousedown', e => {
+  if (isLocked && e.button === 0) doPunch();
+});
+
 document.addEventListener('keydown', e => {
   keys[e.key.toLowerCase()] = true;
   if (e.key === ' ') e.preventDefault();
@@ -481,13 +493,21 @@ const SPEED              = incoming.speed || 5;
 const SPRINT_MULT        = 2.2;
 const JUMP_FORCE         = 8;
 const GRAVITY            = 20;
-const FALL_DAMAGE_VEL    = 14;   // landing speed that kills
-const FALL_DEATH_Y       = -100; // y below which you're dead regardless
+const FALL_DAMAGE_VEL    = 14;
+const FALL_DEATH_Y       = -100;
+const KNOCKBACK_H        = 22;   // horizontal knockback speed
+const KNOCKBACK_UP       = 5;    // upward kick on punch
+const PUNCH_RANGE        = 3.0;  // metres
+const PUNCH_DECAY        = 2.5;  // exponential decay rate for knockback
 
-let velY     = 0;
-let onGround = true;
-let isDead   = false;
-let deathTimer = 0;
+let velY      = 0;
+let velX      = 0;   // horizontal knockback
+let velZ      = 0;
+let onGround  = true;
+let isDead    = false;
+let deathTimer  = 0;
+let punchTimer  = 0; // >0 while punch animation playing
+let sendPunch   = null;
 
 const deathEl = document.getElementById('death-msg');
 
@@ -506,9 +526,33 @@ function die() {
 function respawn() {
   isDead = false;
   playerGroup.position.set(0, 1, 0);
-  velY = 0;
+  velY = 0; velX = 0; velZ = 0;
   onGround = false;
   if (deathEl) deathEl.style.display = 'none';
+}
+
+function doPunch() {
+  if (punchTimer > 0 || isDead) return;
+  punchTimer = 0.35;
+
+  // Find the nearest peer within punch range and knock them back
+  const px = playerGroup.position.x;
+  const py = playerGroup.position.y;
+  const pz = playerGroup.position.z;
+  let nearest = null, nearestDist = PUNCH_RANGE;
+
+  for (const [id, peer] of peers) {
+    const dx = peer.group.position.x - px;
+    const dy = peer.group.position.y - py;
+    const dz = peer.group.position.z - pz;
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (dist < nearestDist) { nearest = { id, dx, dy, dz, dist }; nearestDist = dist; }
+  }
+
+  if (nearest && sendPunch) {
+    const { id, dx, dz, dist } = nearest;
+    sendPunch({ kx: dx / dist, kz: dz / dist }, id);
+  }
 }
 const CAM_DIST   = 5;
 const CAM_HEIGHT = 2.5;
@@ -552,6 +596,13 @@ function loop(now) {
     playerGroup.rotation.y  = Math.atan2(_dir.x, _dir.z);
   }
 
+  // Knockback — exponential decay
+  const decay = Math.exp(-PUNCH_DECAY * dt);
+  velX *= decay;
+  velZ *= decay;
+  playerGroup.position.x += velX * dt;
+  playerGroup.position.z += velZ * dt;
+
   // Jump
   if (keys[' '] && onGround && !isDead) {
     velY = JUMP_FORCE;
@@ -586,7 +637,14 @@ function loop(now) {
   leftLeg.rotation.x  =  swing;
   rightLeg.rotation.x = -swing;
   leftArm.rotation.x  = -swing * 0.6;
-  rightArm.rotation.x =  swing * 0.6;
+
+  // Punch animation overrides right arm
+  if (punchTimer > 0) {
+    punchTimer = Math.max(0, punchTimer - dt);
+    rightArm.rotation.x = -Math.sin((1 - punchTimer / 0.35) * Math.PI) * 1.6;
+  } else {
+    rightArm.rotation.x = swing * 0.6;
+  }
 
   // --- Third-person camera ---
   const camBack = Math.cos(pitch) * CAM_DIST;
