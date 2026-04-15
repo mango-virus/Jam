@@ -105,12 +105,12 @@ function makeCharacter(hexColor) {
   const group = new THREE.Group();
   const color = new THREE.Color(hexColor);
 
-  // Torso
+  // Torso — shortened so legs don't clip through the bottom
   const torso = new THREE.Mesh(
-    new THREE.BoxGeometry(0.5, 0.8, 0.3),
+    new THREE.BoxGeometry(0.5, 0.55, 0.3),
     new THREE.MeshStandardMaterial({ color, emissive: color.clone().multiplyScalar(0.25), roughness: 0.4 })
   );
-  torso.position.y = 0.6;
+  torso.position.y = 0.675; // bottom at 0.40, top at 0.95
   torso.castShadow = true;
   group.add(torso);
 
@@ -123,18 +123,26 @@ function makeCharacter(hexColor) {
   head.castShadow = true;
   group.add(head);
 
-  // Arms
+  // Arms — pivot group sits at the shoulder so the arm hangs down from it
   const armMat = new THREE.MeshStandardMaterial({ color, emissive: color.clone().multiplyScalar(0.25), roughness: 0.4 });
   const armGeo = new THREE.BoxGeometry(0.15, 0.55, 0.15);
-  const leftArm = new THREE.Mesh(armGeo, armMat);
-  leftArm.position.set(-0.34, 0.62, 0);
-  leftArm.rotation.z = 0.2;
-  leftArm.castShadow = true;
+
+  const leftArm = new THREE.Group();
+  leftArm.position.set(-0.34, 0.92, 0);
+  leftArm.rotation.z = 0.15;
+  const leftArmMesh = new THREE.Mesh(armGeo, armMat);
+  leftArmMesh.position.y = -0.275; // hang down from shoulder pivot
+  leftArmMesh.castShadow = true;
+  leftArm.add(leftArmMesh);
   group.add(leftArm);
-  const rightArm = new THREE.Mesh(armGeo, armMat);
-  rightArm.position.set(0.34, 0.62, 0);
-  rightArm.rotation.z = -0.2;
-  rightArm.castShadow = true;
+
+  const rightArm = new THREE.Group();
+  rightArm.position.set(0.34, 0.92, 0);
+  rightArm.rotation.z = -0.15;
+  const rightArmMesh = new THREE.Mesh(armGeo, armMat);
+  rightArmMesh.position.y = -0.275;
+  rightArmMesh.castShadow = true;
+  rightArm.add(rightArmMesh);
   group.add(rightArm);
 
   // Legs
