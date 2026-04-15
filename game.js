@@ -114,6 +114,50 @@ headMesh.position.y = 1.22;
 headMesh.castShadow = true;
 playerGroup.add(headMesh);
 
+// Arms
+const armMat = new THREE.MeshStandardMaterial({ color: playerColor, emissive: playerColor.clone().multiplyScalar(0.25), roughness: 0.4 });
+const armGeo = new THREE.BoxGeometry(0.15, 0.55, 0.15);
+const leftArm = new THREE.Mesh(armGeo, armMat);
+leftArm.position.set(-0.34, 0.62, 0);
+leftArm.rotation.z = 0.2;
+leftArm.castShadow = true;
+playerGroup.add(leftArm);
+const rightArm = new THREE.Mesh(armGeo, armMat);
+rightArm.position.set(0.34, 0.62, 0);
+rightArm.rotation.z = -0.2;
+rightArm.castShadow = true;
+playerGroup.add(rightArm);
+
+// Legs
+const legMat = new THREE.MeshStandardMaterial({ color: 0x1a0030, roughness: 0.6 });
+const legGeo = new THREE.BoxGeometry(0.17, 0.5, 0.17);
+const leftLeg = new THREE.Mesh(legGeo, legMat);
+leftLeg.position.set(-0.13, 0.15, 0);
+leftLeg.castShadow = true;
+playerGroup.add(leftLeg);
+const rightLeg = new THREE.Mesh(legGeo, legMat);
+rightLeg.position.set(0.13, 0.15, 0);
+rightLeg.castShadow = true;
+playerGroup.add(rightLeg);
+
+// Eyeballs (on the front face of the head, z = +0.175 + a little)
+const eyeWhiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
+const eyePupilMat = new THREE.MeshStandardMaterial({ color: 0x110022, roughness: 0.2 });
+const eyeWhiteGeo = new THREE.SphereGeometry(0.06, 8, 8);
+const pupilGeo    = new THREE.SphereGeometry(0.035, 8, 8);
+const leftEyeWhite = new THREE.Mesh(eyeWhiteGeo, eyeWhiteMat);
+leftEyeWhite.position.set(-0.09, 1.25, 0.175);
+playerGroup.add(leftEyeWhite);
+const leftPupil = new THREE.Mesh(pupilGeo, eyePupilMat);
+leftPupil.position.set(-0.09, 1.25, 0.21);
+playerGroup.add(leftPupil);
+const rightEyeWhite = new THREE.Mesh(eyeWhiteGeo, eyeWhiteMat);
+rightEyeWhite.position.set(0.09, 1.25, 0.175);
+playerGroup.add(rightEyeWhite);
+const rightPupil = new THREE.Mesh(pupilGeo, eyePupilMat);
+rightPupil.position.set(0.09, 1.25, 0.21);
+playerGroup.add(rightPupil);
+
 // Hat — wide brim + tall crown (top hat)
 const hatMat = new THREE.MeshStandardMaterial({ color: 0x1a0030, roughness: 0.5, metalness: 0.1 });
 const hatBand = new THREE.MeshStandardMaterial({ color: 0xc64bff, emissive: 0x4a0088, roughness: 0.3 });
@@ -274,6 +318,14 @@ function loop(now) {
     // Face movement direction
     playerGroup.rotation.y = Math.atan2(_dir.x, _dir.z);
   }
+
+  // Limb swing animation
+  const moving = _dir.lengthSq() > 0;
+  const swing  = moving ? Math.sin(time * 8) * 0.5 : 0;
+  leftLeg.rotation.x   =  swing;
+  rightLeg.rotation.x  = -swing;
+  leftArm.rotation.x   = -swing * 0.6;
+  rightArm.rotation.x  =  swing * 0.6;
 
   playerGroup.position.x = Math.max(-BOUNDS, Math.min(BOUNDS, playerGroup.position.x));
   playerGroup.position.z = Math.max(-BOUNDS, Math.min(BOUNDS, playerGroup.position.z));
