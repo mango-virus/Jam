@@ -1,308 +1,313 @@
-// Minimal top-down game demonstrating two things at once:
-//   1. The Portal Protocol (mandatory for the jam)
-//   2. Optional realtime multiplayer via Trystero (Nostr strategy).
-//      No backend, no accounts, no API keys — just browser-to-browser
-//      WebRTC using public Nostr relays as signaling.
-//
-// The game renders and plays solo *immediately*. Multiplayer connects
-// in the background; if it fails (CDN blocked, every relay down,
-// restrictive network) the HUD flips to "multiplayer offline" and the
-// game keeps running. Rip everything out and replace with your own
-// game — just keep the Portal.* calls.
+// 3D walking space — Portal Protocol preserved.
+// Replace everything between the dashed lines with your own game logic.
+// Keep the Portal.* calls at the top and in the portal-collision section.
+
+import * as THREE from 'https://esm.sh/three@0.175.0';
 
 // ------------------------------------------------------------------
-// Portal protocol + core game setup
+// Portal protocol setup
 // ------------------------------------------------------------------
 
-const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
-const W = canvas.width;
-const H = canvas.height;
-
+// Portal is a global set by portal.js (loaded as a plain <script> tag)
 const incoming = Portal.readPortalParams();
 document.getElementById('username').textContent = incoming.username;
 
 const nextTarget = await Portal.pickPortalTarget();
 
-const player = {
-  x: W / 2,
-  y: H / 2,
-  r: 16,
-  speed: incoming.speed || 5,
-  color: '#' + incoming.color,
-};
+// ------------------------------------------------------------------
+// Renderer
+// ------------------------------------------------------------------
 
-const exitPortal = {
-  x: W - 120,
-  y: H / 2,
-  r: 44,
-  color: '#c64bff',
-  label: nextTarget ? `→ ${nextTarget.title}` : 'no destinations yet',
-  target: nextTarget?.url || null,
-  pulse: 0,
-};
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
 
-const returnPortal = incoming.ref ? {
-  x: 120,
-  y: H / 2,
-  r: 44,
-  color: '#4ff0ff',
-  label: '← back',
-  target: incoming.ref,
-  pulse: 0,
-} : null;
+// ------------------------------------------------------------------
+// Scene
+// ------------------------------------------------------------------
 
-if (incoming.fromPortal && returnPortal) {
-  player.x = returnPortal.x + returnPortal.r + 30;
-  player.y = returnPortal.y;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0514);
+scene.fog = new THREE.Fog(0x0a0514, 28, 90);
+
+const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 200);
+
+// Lighting
+scene.add(new THREE.AmbientLight(0x220a44, 5));
+scene.add(new THREE.HemisphereLight(0x6633cc, 0x0a0514, 1.5));
+const sun = new THREE.DirectionalLight(0xc680ff, 2.5);
+sun.position.set(20, 40, 15);
+sun.castShadow = true;
+sun.shadow.mapSize.setScalar(2048);
+sun.shadow.camera.near = 0.5;
+sun.shadow.camera.far = 150;
+sun.shadow.camera.left = -60;
+sun.shadow.camera.right = 60;
+sun.shadow.camera.top = 60;
+sun.shadow.camera.bottom = -60;
+scene.add(sun);
+
+// Ground
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(200, 200),
+  new THREE.MeshStandardMaterial({ color: 0x0d0620, roughness: 1 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+scene.add(new THREE.GridHelper(200, 80, 0x2a085a, 0x130428));
+
+// Decorative glowing pillars
+const PILLARS = [
+  [5, 4],   [-8, 6],  [12, 2],  [-5, -8],
+  [17, -4], [-13, 9], [7, -15], [-3, 17],
+  [20, 12], [-18, -6],[11, 20], [-15, -17],
+  [8, -22], [-22, 11],[24, -8], [-6, 24],
+];
+// Deterministic pseudo-random so the layout is stable on reload
+let _seed = 42;
+function rand() { _seed = (_seed * 1664525 + 1013904223) & 0xffffffff; return (_seed >>> 0) / 0xffffffff; }
+
+for (const [x, z] of PILLARS) {
+  const h = 1.5 + rand() * 4;
+  const w = 0.4 + rand() * 1.2;
+  const hue = 0.72 + rand() * 0.15;
+  const col = new THREE.Color().setHSL(hue, 0.8, 0.25);
+  const emissive = new THREE.Color().setHSL(hue, 1, 0.1);
+  const pillar = new THREE.Mesh(
+    new THREE.BoxGeometry(w, h, w),
+    new THREE.MeshStandardMaterial({ color: col, emissive, roughness: 0.4 })
+  );
+  pillar.position.set(x, h / 2, z);
+  pillar.castShadow = true;
+  scene.add(pillar);
+  const glow = new THREE.PointLight(new THREE.Color().setHSL(hue, 1, 0.6), 0.8, 6);
+  glow.position.set(x, h + 0.5, z);
+  scene.add(glow);
 }
 
 // ------------------------------------------------------------------
-// Multiplayer via Trystero (optional, non-blocking)
+// Player character
 // ------------------------------------------------------------------
-// To delete multiplayer entirely: remove everything between the dashed
-// lines above and below this block, plus the <div id="peers"> in
-// index.html. The game loop below doesn't depend on any of it.
 
-const peers = new Map();
-const peerCountEl = document.getElementById('peers');
-let sendState = null;
-let room = null;
+const playerGroup = new THREE.Group();
+const playerColor = new THREE.Color('#' + incoming.color);
 
-function setPeerStatus(text, isError = false) {
-  if (!peerCountEl) return;
-  peerCountEl.textContent = text;
-  peerCountEl.style.color = isError ? '#ff6b6b' : '';
+// Torso
+const torso = new THREE.Mesh(
+  new THREE.BoxGeometry(0.5, 0.8, 0.3),
+  new THREE.MeshStandardMaterial({ color: playerColor, emissive: playerColor.clone().multiplyScalar(0.25), roughness: 0.4 })
+);
+torso.position.y = 0.6;
+torso.castShadow = true;
+playerGroup.add(torso);
+
+// Head
+const headMesh = new THREE.Mesh(
+  new THREE.BoxGeometry(0.35, 0.35, 0.35),
+  new THREE.MeshStandardMaterial({ color: 0xffcca0, roughness: 0.7 })
+);
+headMesh.position.y = 1.22;
+headMesh.castShadow = true;
+playerGroup.add(headMesh);
+
+// Per-player glow
+const playerGlow = new THREE.PointLight(playerColor, 1.5, 3);
+playerGlow.position.y = 0.8;
+playerGroup.add(playerGlow);
+
+scene.add(playerGroup);
+
+// ------------------------------------------------------------------
+// Portals
+// ------------------------------------------------------------------
+
+function makePortal(color) {
+  const group = new THREE.Group();
+  const plane = new THREE.Mesh(
+    new THREE.PlaneGeometry(2, 3.5),
+    new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity: 0.7 })
+  );
+  plane.position.y = 1.75;
+  group.add(plane);
+  const edges = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(2.1, 3.6, 0.05)),
+    new THREE.LineBasicMaterial({ color })
+  );
+  edges.position.y = 1.75;
+  group.add(edges);
+  const light = new THREE.PointLight(color, 3, 10);
+  light.position.y = 1.75;
+  group.add(light);
+  return { group, plane, light };
 }
 
-function refreshPeerCount() {
-  setPeerStatus(`${peers.size + 1} online`);
+const exitPortal = makePortal(0xc64bff);
+exitPortal.group.position.set(36, 0, 0);
+exitPortal.group.rotation.y = Math.PI / 2;
+scene.add(exitPortal.group);
+
+let returnPortal = null;
+if (incoming.ref) {
+  returnPortal = makePortal(0x4ff0ff);
+  returnPortal.group.position.set(-36, 0, 0);
+  returnPortal.group.rotation.y = Math.PI / 2;
+  scene.add(returnPortal.group);
 }
 
-function broadcastSelf() {
-  if (!sendState) return;
-  sendState({
-    x: player.x,
-    y: player.y,
-    color: player.color,
-    username: incoming.username,
-  });
+// Canvas-texture sprite labels above portals
+function makeLabel(text, color) {
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 80;
+  const cx = c.getContext('2d');
+  cx.clearRect(0, 0, 512, 80);
+  cx.fillStyle = color;
+  cx.font = 'bold 28px ui-sans-serif, system-ui, sans-serif';
+  cx.textAlign = 'center';
+  cx.fillText(text, 256, 54);
+  const sprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true })
+  );
+  sprite.scale.set(5, 0.8, 1);
+  return sprite;
+}
+const exitLabel = makeLabel(nextTarget ? `→ ${nextTarget.title}` : '→ exit', '#c64bff');
+exitLabel.position.set(36, 5, 0);
+scene.add(exitLabel);
+if (returnPortal) {
+  const rl = makeLabel('← back', '#4ff0ff');
+  rl.position.set(-36, 5, 0);
+  scene.add(rl);
 }
 
-async function loadTrystero() {
-  // Try multiple CDN paths in order so a single CDN hiccup doesn't
-  // kill multiplayer. trystero >= 0.23 defaults to the Nostr strategy
-  // which has hundreds of public relays and is the most reliable
-  // option for zero-config P2P.
-  const urls = [
-    'https://esm.run/trystero@0.23',
-    'https://cdn.jsdelivr.net/npm/trystero@0.23/+esm',
-    'https://esm.sh/trystero@0.23',
-  ];
-  let lastErr;
-  for (const url of urls) {
-    try {
-      const mod = await import(url);
-      if (mod && typeof mod.joinRoom === 'function') {
-        console.log('[jam] loaded trystero from', url);
-        return mod;
-      }
-      lastErr = new Error(`module from ${url} has no joinRoom export`);
-    } catch (err) {
-      console.warn('[jam] cdn failed:', url, err.message);
-      lastErr = err;
-    }
-  }
-  throw lastErr || new Error('could not load trystero');
-}
+// ------------------------------------------------------------------
+// Input & pointer lock
+// ------------------------------------------------------------------
 
-async function setupMultiplayer() {
-  try {
-    setPeerStatus('connecting…');
-    const { joinRoom } = await loadTrystero();
+const keys = {};
+let yaw = 0;       // camera orbit angle around player
+let isLocked = false;
+let redirecting = false;
 
-    room = joinRoom(
-      { appId: 'ordinary-game-jam-starter' },
-      'demo-room'
-    );
-    const [send, getState] = room.makeAction('state');
-    sendState = send;
+renderer.domElement.addEventListener('click', () => renderer.domElement.requestPointerLock());
 
-    room.onPeerJoin(id => {
-      console.log('[jam] peer joined:', id);
-      peers.set(id, null);
-      broadcastSelf();
-      refreshPeerCount();
-    });
+document.addEventListener('pointerlockchange', () => {
+  isLocked = document.pointerLockElement === renderer.domElement;
+  const hint = document.getElementById('hint');
+  if (hint) hint.textContent = isLocked
+    ? 'WASD to move  ·  mouse to look  ·  walk into a portal to travel'
+    : 'Click to capture mouse';
+});
 
-    room.onPeerLeave(id => {
-      console.log('[jam] peer left:', id);
-      peers.delete(id);
-      refreshPeerCount();
-    });
+document.addEventListener('mousemove', e => {
+  if (!isLocked) return;
+  yaw += e.movementX * 0.0025;   // positive = orbit right / turn right
+});
 
-    getState((data, peerId) => {
-      const existing = peers.get(peerId);
-      peers.set(peerId, {
-        ...data,
-        renderX: existing?.renderX ?? data.x,
-        renderY: existing?.renderY ?? data.y,
-      });
-    });
+document.addEventListener('keydown', e => {
+  keys[e.key.toLowerCase()] = true;
+  if (e.key === ' ') e.preventDefault();
+});
+document.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
 
-    refreshPeerCount();
-    broadcastSelf();
-    console.log('[jam] multiplayer ready (nostr)');
-  } catch (err) {
-    console.error('[jam] multiplayer setup failed:', err);
-    setPeerStatus('multiplayer offline', true);
-  }
-}
-
-setPeerStatus('connecting…');
-setupMultiplayer();
-
-addEventListener('beforeunload', () => {
-  if (room) {
-    try { room.leave(); } catch {}
-  }
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
 });
 
 // ------------------------------------------------------------------
-// Game loop (runs regardless of multiplayer state)
+// Game loop
 // ------------------------------------------------------------------
 
-const stars = Array.from({ length: 80 }, () => ({
-  x: Math.random() * W,
-  y: Math.random() * H,
-  s: Math.random() * 1.5 + 0.3,
-  t: Math.random() * Math.PI * 2,
-}));
+const SPEED  = incoming.speed || 5;
+const BOUNDS = 38;
+const CAM_DIST   = 5;
+const CAM_HEIGHT = 2.5;
 
-const keys = {};
-addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; });
-addEventListener('keyup',   e => { keys[e.key.toLowerCase()] = false; });
+const _dir    = new THREE.Vector3();
+const _offset = new THREE.Vector3();
+const _euler  = new THREE.Euler(0, 0, 0, 'YXZ');
 
-let redirecting = false;
+let prev = performance.now();
+let time = 0;
 
-function attemptPortal(portal) {
-  if (redirecting || !portal || !portal.target) return;
-  const dx = player.x - portal.x;
-  const dy = player.y - portal.y;
-  if (Math.hypot(dx, dy) < portal.r + player.r - 4) {
-    redirecting = true;
-    Portal.sendPlayerThroughPortal(portal.target, {
-      username: incoming.username,
-      color: incoming.color,
-      speed: player.speed,
-    });
-  }
-}
-
-let lastBroadcast = 0;
-
-function update(dt) {
-  const v = player.speed;
-  if (keys['w'] || keys['arrowup'])    player.y -= v;
-  if (keys['s'] || keys['arrowdown'])  player.y += v;
-  if (keys['a'] || keys['arrowleft'])  player.x -= v;
-  if (keys['d'] || keys['arrowright']) player.x += v;
-  player.x = Math.max(player.r, Math.min(W - player.r, player.x));
-  player.y = Math.max(player.r, Math.min(H - player.r, player.y));
-
-  exitPortal.pulse += dt * 3;
-  if (returnPortal) returnPortal.pulse += dt * 3;
-
-  attemptPortal(exitPortal);
-  if (returnPortal) attemptPortal(returnPortal);
-
-  const now = performance.now();
-  if (now - lastBroadcast > 66) {
-    lastBroadcast = now;
-    broadcastSelf();
-  }
-
-  for (const peer of peers.values()) {
-    if (!peer) continue;
-    const k = Math.min(1, dt * 12);
-    peer.renderX += (peer.x - peer.renderX) * k;
-    peer.renderY += (peer.y - peer.renderY) * k;
-  }
-}
-
-function drawStars(t) {
-  for (const s of stars) {
-    const a = 0.5 + 0.5 * Math.sin(t * 2 + s.t);
-    ctx.fillStyle = `rgba(255,255,255,${a * 0.8})`;
-    ctx.fillRect(s.x, s.y, s.s, s.s);
-  }
-}
-
-function drawPortal(p) {
-  const glow = 18 + Math.sin(p.pulse) * 6;
-  ctx.save();
-  ctx.shadowColor = p.color;
-  ctx.shadowBlur = glow;
-  ctx.strokeStyle = p.color;
-  ctx.lineWidth = 5;
-  ctx.beginPath();
-  ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-  ctx.stroke();
-
-  ctx.lineWidth = 2;
-  ctx.globalAlpha = 0.55;
-  ctx.beginPath();
-  ctx.arc(p.x, p.y, p.r - 10 + Math.sin(p.pulse) * 4, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.restore();
-
-  ctx.fillStyle = '#fff';
-  ctx.font = '600 14px ui-sans-serif, system-ui, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText(p.label, p.x, p.y - p.r - 12);
-}
-
-function drawAvatar(x, y, color, username, alpha) {
-  ctx.save();
-  ctx.globalAlpha = alpha;
-  ctx.shadowColor = color;
-  ctx.shadowBlur = 16;
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.arc(x, y, player.r, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-  if (username) {
-    ctx.fillStyle = 'rgba(255,255,255,0.9)';
-    ctx.font = '12px ui-sans-serif, system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(username, x, y - player.r - 8);
-  }
-}
-
-function drawPeers() {
-  for (const peer of peers.values()) {
-    if (!peer) continue;
-    drawAvatar(peer.renderX, peer.renderY, peer.color || '#888', peer.username || '?', 0.85);
-  }
-}
-
-function render(t) {
-  ctx.fillStyle = '#120826';
-  ctx.fillRect(0, 0, W, H);
-  drawStars(t);
-  drawPortal(exitPortal);
-  if (returnPortal) drawPortal(returnPortal);
-  drawPeers();
-  drawAvatar(player.x, player.y, player.color, '', 1);
-}
-
-let last = performance.now();
 function loop(now) {
-  const dt = Math.min(0.05, (now - last) / 1000);
-  last = now;
-  update(dt);
-  render(now / 1000);
   requestAnimationFrame(loop);
+  const dt = Math.min((now - prev) / 1000, 0.05);
+  prev = now;
+  time += dt;
+
+  // --- Movement ---
+  _euler.set(0, yaw, 0);
+  _dir.set(0, 0, 0);
+  if (keys['w'] || keys['arrowup'])    _dir.z -= 1;
+  if (keys['s'] || keys['arrowdown'])  _dir.z += 1;
+  if (keys['a'] || keys['arrowleft'])  _dir.x -= 1;
+  if (keys['d'] || keys['arrowright']) _dir.x += 1;
+
+  if (_dir.lengthSq() > 0) {
+    _dir.normalize().applyEuler(_euler);
+    playerGroup.position.x += _dir.x * SPEED * dt;
+    playerGroup.position.z += _dir.z * SPEED * dt;
+    // Face movement direction
+    playerGroup.rotation.y = Math.atan2(_dir.x, _dir.z);
+  }
+
+  playerGroup.position.x = Math.max(-BOUNDS, Math.min(BOUNDS, playerGroup.position.x));
+  playerGroup.position.z = Math.max(-BOUNDS, Math.min(BOUNDS, playerGroup.position.z));
+
+  // --- Third-person camera ---
+  // Camera sits CAM_DIST behind the player, rotated by yaw
+  _offset.set(0, 0, CAM_DIST).applyEuler(_euler);
+  camera.position.set(
+    playerGroup.position.x + _offset.x,
+    playerGroup.position.y + CAM_HEIGHT,
+    playerGroup.position.z + _offset.z
+  );
+  camera.lookAt(playerGroup.position.x, playerGroup.position.y + 1, playerGroup.position.z);
+
+  // --- Animate portals ---
+  const pulse = 0.7 + 0.3 * Math.sin(time * 3);
+  exitPortal.light.intensity = 2.5 + 1.5 * pulse;
+  exitPortal.plane.material.opacity = 0.45 + 0.3 * pulse;
+  if (returnPortal) {
+    returnPortal.light.intensity = 2.5 + 1.5 * pulse;
+    returnPortal.plane.material.opacity = 0.45 + 0.3 * pulse;
+  }
+
+  // ------------------------------------------------------------------
+  // Portal collision — keep these calls
+  // ------------------------------------------------------------------
+  if (!redirecting) {
+    const px = playerGroup.position.x;
+    const pz = playerGroup.position.z;
+    if (Math.hypot(px - exitPortal.group.position.x, pz - exitPortal.group.position.z) < 2) {
+      if (nextTarget?.url) {
+        redirecting = true;
+        Portal.sendPlayerThroughPortal(nextTarget.url, {
+          username: incoming.username,
+          color: incoming.color,
+          speed: SPEED,
+        });
+      }
+    }
+    if (returnPortal && incoming.ref) {
+      if (Math.hypot(px - returnPortal.group.position.x, pz - returnPortal.group.position.z) < 2) {
+        redirecting = true;
+        Portal.sendPlayerThroughPortal(incoming.ref, {
+          username: incoming.username,
+          color: incoming.color,
+          speed: SPEED,
+        });
+      }
+    }
+  }
+
+  renderer.render(scene, camera);
 }
-requestAnimationFrame(loop);
+
+loop(performance.now());
