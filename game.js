@@ -323,6 +323,7 @@ function broadcastSelf() {
   if (!sendState) return;
   sendState({
     x:        playerGroup.position.x,
+    y:        playerGroup.position.y,
     z:        playerGroup.position.z,
     rotY:     playerGroup.rotation.y,
     color:    incoming.color,
@@ -360,7 +361,7 @@ function addPeer(id, data) {
   char.group.position.set(data.x ?? 0, 0, data.z ?? 0);
   char.group.rotation.y = data.rotY ?? 0;
   scene.add(char.group);
-  peers.set(id, { ...char, tx: data.x ?? 0, tz: data.z ?? 0, rotY: data.rotY ?? 0, moving: false, swing: 0, username: data.username, redrawLabel });
+  peers.set(id, { ...char, tx: data.x ?? 0, ty: data.y ?? 0, tz: data.z ?? 0, rotY: data.rotY ?? 0, moving: false, swing: 0, username: data.username, redrawLabel });
 }
 
 function removePeer(id) {
@@ -408,6 +409,7 @@ async function setupMultiplayer() {
       } else {
         const peer = peers.get(peerId);
         peer.tx     = data.x;
+        peer.ty     = data.y ?? 0;
         peer.tz     = data.z;
         peer.rotY   = data.rotY;
         peer.moving = data.moving;
@@ -610,6 +612,7 @@ function loop(now) {
   // --- Peer interpolation & limb animation ---
   for (const peer of peers.values()) {
     peer.group.position.x += (peer.tx - peer.group.position.x) * Math.min(1, dt * 12);
+    peer.group.position.y += (peer.ty - peer.group.position.y) * Math.min(1, dt * 20);
     peer.group.position.z += (peer.tz - peer.group.position.z) * Math.min(1, dt * 12);
     // Shortest-path yaw interpolation
     let dRot = peer.rotY - peer.group.rotation.y;
