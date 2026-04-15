@@ -113,6 +113,8 @@ const PILLARS = [
 let _seed = 42;
 function rand() { _seed = (_seed * 1664525 + 1013904223) & 0xffffffff; return (_seed >>> 0) / 0xffffffff; }
 
+const pillarData = []; // { x, z, r } used for collision
+
 for (const [x, z] of PILLARS) {
   const h = 1.5 + rand() * 4;
   const w = 0.4 + rand() * 1.2;
@@ -129,6 +131,7 @@ for (const [x, z] of PILLARS) {
   const glow = new THREE.PointLight(new THREE.Color().setHSL(hue, 1, 0.6), 0.8, 6);
   glow.position.set(x, h + 0.5, z);
   scene.add(glow);
+  pillarData.push({ x, z, r: w / 2 }); // half-width as collision radius
 }
 
 // ------------------------------------------------------------------
@@ -515,6 +518,15 @@ function onPlatform(x, z) {
   return Math.abs(x) < PLATFORM_HALF && Math.abs(z) < PLATFORM_HALF;
 }
 
+// Returns the push vector needed to move point (px,pz) outside circle (cx,cz,r), or null.
+function circleOverlap(px, pz, cx, cz, r) {
+  const dx = px - cx, dz = pz - cz;
+  const dist = Math.sqrt(dx * dx + dz * dz);
+  if (dist >= r || dist < 0.0001) return null;
+  const push = (r - dist) / dist;
+  return { nx: dx * push, nz: dz * push };
+}
+
 function die() {
   if (isDead) return;
   isDead = true;
@@ -602,6 +614,34 @@ function loop(now) {
   velZ *= decay;
   playerGroup.position.x += velX * dt;
   playerGroup.position.z += velZ * dt;
+
+  // --- Collision resolution ---
+  const PLAYER_R = 0.32;
+
+  // vs pillars (solid — player pushed fully out)
+  for (const p of pillarData) {
+    const ov = circleOverlap(playerGroup.position.x, playerGroup.position.z, p.x, p.z, p.r + PLAYER_R);
+    if (ov) {
+      playerGroup.position.x += ov.nx;
+      playerGroup.position.z += ov.nz;
+    }
+  }
+
+  // vs peer characters (player blocked 70%, peer nudged 30%)
+  for (const peer of peers.values()) {
+    const ov = circleOverlap(
+      playerGroup.position.x, playerGroup.position.z,
+      peer.group.position.x, peer.group.position.z,
+      PLAYER_R * 2
+    );
+    if (ov) {
+      playerGroup.position.x += ov.nx * 0.7;
+      playerGroup.position.z += ov.nz * 0.7;
+      // Nudge peer visually; interpolation pulls them back to real pos within ms
+      peer.group.position.x -= ov.nx * 0.3;
+      peer.group.position.z -= ov.nz * 0.3;
+    }
+  }
 
   // Jump
   if (keys[' '] && onGround && !isDead) {
