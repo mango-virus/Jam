@@ -203,7 +203,8 @@ if (returnPortal) {
 // ------------------------------------------------------------------
 
 const keys = {};
-let yaw = 0;       // camera orbit angle around player
+let yaw = 0;         // camera orbit angle around player (horizontal)
+let pitch = 0.2;     // camera tilt angle (vertical)
 let isLocked = false;
 let redirecting = false;
 
@@ -219,7 +220,9 @@ document.addEventListener('pointerlockchange', () => {
 
 document.addEventListener('mousemove', e => {
   if (!isLocked) return;
-  yaw += e.movementX * 0.0025;   // positive = orbit right / turn right
+  yaw   -= e.movementX * 0.0025;
+  pitch -= e.movementY * 0.0025;
+  pitch  = Math.max(-0.6, Math.min(0.8, pitch)); // clamp: don't flip upside-down
 });
 
 document.addEventListener('keydown', e => {
@@ -275,15 +278,18 @@ function loop(now) {
   playerGroup.position.x = Math.max(-BOUNDS, Math.min(BOUNDS, playerGroup.position.x));
   playerGroup.position.z = Math.max(-BOUNDS, Math.min(BOUNDS, playerGroup.position.z));
 
-  // --- Third-person camera ---
-  // Camera sits CAM_DIST behind the player, rotated by yaw
-  _offset.set(0, 0, CAM_DIST).applyEuler(_euler);
+  // --- Third-person camera (yaw + pitch) ---
+  const camBack = Math.cos(pitch) * CAM_DIST;
+  const camUp   = Math.sin(pitch) * CAM_DIST;
+  _offset.set(0, 0, camBack).applyEuler(_euler);
   camera.position.set(
     playerGroup.position.x + _offset.x,
-    playerGroup.position.y + CAM_HEIGHT,
+    playerGroup.position.y + CAM_HEIGHT + camUp,
     playerGroup.position.z + _offset.z
   );
-  camera.lookAt(playerGroup.position.x, playerGroup.position.y + 1, playerGroup.position.z);
+  // lookAt target shifts opposite to pitch so the player stays centred on screen
+  const lookY = playerGroup.position.y + 1 - Math.sin(pitch) * CAM_DIST * 0.5;
+  camera.lookAt(playerGroup.position.x, lookY, playerGroup.position.z);
 
   // --- Animate portals ---
   const pulse = 0.7 + 0.3 * Math.sin(time * 3);
