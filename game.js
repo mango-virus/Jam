@@ -289,18 +289,36 @@ function broadcastSelf() {
   });
 }
 
+// Mutable label — returns sprite + a redraw function so text can be updated live
+function makeMutableLabel(text, color) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256; canvas.height = 48;
+  const ctx = canvas.getContext('2d');
+  const tex = new THREE.CanvasTexture(canvas);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
+  sprite.scale.set(2.5, 0.45, 1);
+  sprite.position.y = 2.2;
+  function redraw(t) {
+    ctx.clearRect(0, 0, 256, 48);
+    ctx.fillStyle = color;
+    ctx.font = 'bold 20px ui-sans-serif, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(t, 128, 34);
+    tex.needsUpdate = true;
+  }
+  redraw(text);
+  return { sprite, redraw };
+}
+
 function addPeer(id, data) {
   if (peers.has(id)) return;
   const char = makeCharacter('#' + (data.color || 'c64bff'));
-  // Username label floats above head
-  const nameLabel = makeLabel(data.username || '?', '#' + (data.color || 'ffffff'), 256, 48, 20);
-  nameLabel.scale.set(2.5, 0.45, 1);
-  nameLabel.position.y = 2.2;
+  const { sprite: nameLabel, redraw: redrawLabel } = makeMutableLabel(data.username || '?', '#' + (data.color || 'ffffff'));
   char.group.add(nameLabel);
   char.group.position.set(data.x ?? 0, 0, data.z ?? 0);
   char.group.rotation.y = data.rotY ?? 0;
   scene.add(char.group);
-  peers.set(id, { ...char, tx: data.x ?? 0, tz: data.z ?? 0, rotY: data.rotY ?? 0, moving: false, swing: 0 });
+  peers.set(id, { ...char, tx: data.x ?? 0, tz: data.z ?? 0, rotY: data.rotY ?? 0, moving: false, swing: 0, username: data.username, redrawLabel });
 }
 
 function removePeer(id) {
@@ -351,6 +369,10 @@ async function setupMultiplayer() {
         peer.tz     = data.z;
         peer.rotY   = data.rotY;
         peer.moving = data.moving;
+        if (data.username !== peer.username) {
+          peer.username = data.username;
+          peer.redrawLabel(data.username || '?');
+        }
       }
       refreshPeerCount();
     });
