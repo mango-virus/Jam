@@ -42,39 +42,73 @@ document.body.appendChild(renderer.domElement);
 // ------------------------------------------------------------------
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0a0514);
-scene.fog = new THREE.Fog(0x0a0514, 28, 90);
-const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 200);
+scene.background = new THREE.Color(0x6aa8d8);
+scene.fog = new THREE.Fog(0x9ec8e8, 50, 200);
+const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 600);
 
-scene.add(new THREE.AmbientLight(0x220a44, 5));
-scene.add(new THREE.HemisphereLight(0x6633cc, 0x0a0514, 1.5));
-const sun = new THREE.DirectionalLight(0xc680ff, 2.5);
-sun.position.set(20, 40, 15);
+scene.add(new THREE.AmbientLight(0xfff4e0, 2));
+scene.add(new THREE.HemisphereLight(0x87ceef, 0x4a8c3f, 1.2));
+const sun = new THREE.DirectionalLight(0xfff4c0, 3);
+sun.position.set(30, 80, 20);
 sun.castShadow = true;
 sun.shadow.mapSize.setScalar(2048);
-sun.shadow.camera.near = 0.5;
-sun.shadow.camera.far = 150;
+sun.shadow.camera.near = 1;
+sun.shadow.camera.far = 250;
 sun.shadow.camera.left = -60;
 sun.shadow.camera.right = 60;
 sun.shadow.camera.top = 60;
 sun.shadow.camera.bottom = -60;
 scene.add(sun);
 
-const ground = new THREE.Mesh(
-  new THREE.PlaneGeometry(200, 200),
-  new THREE.MeshStandardMaterial({ color: 0x0d0620, roughness: 1 })
+// Floating platform
+const PLATFORM_HALF = 24;
+const platform = new THREE.Mesh(
+  new THREE.BoxGeometry(PLATFORM_HALF * 2, 4, PLATFORM_HALF * 2),
+  new THREE.MeshStandardMaterial({ color: 0x3d2060, roughness: 0.85, metalness: 0.1 })
 );
-ground.rotation.x = -Math.PI / 2;
-ground.receiveShadow = true;
-scene.add(ground);
-scene.add(new THREE.GridHelper(200, 80, 0x2a085a, 0x130428));
+platform.position.y = -2;
+platform.receiveShadow = true;
+platform.castShadow = true;
+scene.add(platform);
+scene.add(new THREE.GridHelper(PLATFORM_HALF * 2, 24, 0x2a085a, 0x1e0545));
 
-// Decorative glowing pillars
+// Distant ground far below
+const farGround = new THREE.Mesh(
+  new THREE.PlaneGeometry(3000, 3000),
+  new THREE.MeshStandardMaterial({ color: 0x2d5a1b, roughness: 1 })
+);
+farGround.rotation.x = -Math.PI / 2;
+farGround.position.y = -220;
+scene.add(farGround);
+
+// Clouds
+const cloudMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 });
+function addCloud(cx, cy, cz, scale) {
+  const g = new THREE.Group();
+  for (const [ox, oy, oz, r] of [
+    [0, 0, 0, 4], [5, 1, 0, 3], [-4, 0.5, 1, 3.5],
+    [2, -1, 3, 2.5], [-2, 1, -3, 2],
+  ]) {
+    const c = new THREE.Mesh(new THREE.SphereGeometry(r * scale, 7, 5), cloudMat);
+    c.position.set(ox * scale, oy * scale, oz * scale);
+    g.add(c);
+  }
+  g.position.set(cx, cy, cz);
+  scene.add(g);
+}
+addCloud(-60,  -8, -30, 1.4);
+addCloud( 55, -15,  20, 1.1);
+addCloud(-40, -30,  50, 1.6);
+addCloud( 70,  -5, -60, 0.9);
+addCloud(-20, -50,  80, 1.3);
+addCloud( 80, -40, -10, 1.0);
+addCloud(-70, -20,  10, 1.2);
+
+// Decorative glowing pillars — trimmed to fit the platform
 const PILLARS = [
-  [5, 4],   [-8, 6],  [12, 2],  [-5, -8],
-  [17, -4], [-13, 9], [7, -15], [-3, 17],
-  [20, 12], [-18, -6],[11, 20], [-15, -17],
-  [8, -22], [-22, 11],[24, -8], [-6, 24],
+  [4, 3],   [-7, 5],  [10, 2],   [-4, -7],
+  [14, -3], [-11, 8], [6, -13],  [-2, 15],
+  [16, 10], [-14, -5],[10, 17],  [-13, -14],
 ];
 let _seed = 42;
 function rand() { _seed = (_seed * 1664525 + 1013904223) & 0xffffffff; return (_seed >>> 0) / 0xffffffff; }
@@ -226,14 +260,14 @@ function makePortal(color) {
 }
 
 const exitPortal = makePortal(0xc64bff);
-exitPortal.group.position.set(36, 0, 0);
+exitPortal.group.position.set(20, 0, 0);
 exitPortal.group.rotation.y = Math.PI / 2;
 scene.add(exitPortal.group);
 
 let returnPortal = null;
 if (incoming.ref) {
   returnPortal = makePortal(0x4ff0ff);
-  returnPortal.group.position.set(-36, 0, 0);
+  returnPortal.group.position.set(-20, 0, 0);
   returnPortal.group.rotation.y = Math.PI / 2;
   scene.add(returnPortal.group);
 }
@@ -256,11 +290,11 @@ function makeLabel(text, color, width = 512, height = 80, fontSize = 28) {
 }
 
 const exitLabel = makeLabel(nextTarget ? `→ ${nextTarget.title}` : '→ exit', '#c64bff');
-exitLabel.position.set(36, 5, 0);
+exitLabel.position.set(20, 5, 0);
 scene.add(exitLabel);
 if (returnPortal) {
   const rl = makeLabel('← back', '#4ff0ff');
-  rl.position.set(-36, 5, 0);
+  rl.position.set(-20, 5, 0);
   scene.add(rl);
 }
 
@@ -441,14 +475,39 @@ window.addEventListener('resize', () => {
 // Game loop
 // ------------------------------------------------------------------
 
-const SPEED        = incoming.speed || 5;
-const SPRINT_MULT  = 2.2;
-const JUMP_FORCE   = 8;
-const GRAVITY      = 20;
-const BOUNDS       = 38;
+const SPEED              = incoming.speed || 5;
+const SPRINT_MULT        = 2.2;
+const JUMP_FORCE         = 8;
+const GRAVITY            = 20;
+const FALL_DAMAGE_VEL    = 14;   // landing speed that kills
+const FALL_DEATH_Y       = -100; // y below which you're dead regardless
 
-let velY = 0;      // vertical velocity for jump/gravity
+let velY     = 0;
 let onGround = true;
+let isDead   = false;
+let deathTimer = 0;
+
+const deathEl = document.getElementById('death-msg');
+
+function onPlatform(x, z) {
+  return Math.abs(x) < PLATFORM_HALF && Math.abs(z) < PLATFORM_HALF;
+}
+
+function die() {
+  if (isDead) return;
+  isDead = true;
+  deathTimer = 2.0;
+  velY = 0;
+  if (deathEl) deathEl.style.display = 'flex';
+}
+
+function respawn() {
+  isDead = false;
+  playerGroup.position.set(0, 1, 0);
+  velY = 0;
+  onGround = false;
+  if (deathEl) deathEl.style.display = 'none';
+}
 const CAM_DIST   = 5;
 const CAM_HEIGHT = 2.5;
 
@@ -474,7 +533,13 @@ function loop(now) {
   if (keys['a'] || keys['arrowleft'])  _dir.x -= 1;
   if (keys['d'] || keys['arrowright']) _dir.x += 1;
 
-  isMoving = _dir.lengthSq() > 0;
+  // Death timer
+  if (isDead) {
+    deathTimer -= dt;
+    if (deathTimer <= 0) respawn();
+  }
+
+  isMoving = _dir.lengthSq() > 0 && !isDead;
   const isSprinting = keys['shift'];
   const speed = SPEED * (isSprinting ? SPRINT_MULT : 1);
 
@@ -486,17 +551,32 @@ function loop(now) {
   }
 
   // Jump
-  if (keys[' '] && onGround) {
+  if (keys[' '] && onGround && !isDead) {
     velY = JUMP_FORCE;
     onGround = false;
   }
-  velY -= GRAVITY * dt;
+
+  // Gravity
+  if (!onGround) velY -= GRAVITY * dt;
   playerGroup.position.y += velY * dt;
-  if (playerGroup.position.y <= 0) {
+
+  // Walked off edge — drop
+  if (onGround && !onPlatform(playerGroup.position.x, playerGroup.position.z)) {
+    onGround = false;
+  }
+
+  // Landing
+  if (!onGround && playerGroup.position.y <= 0 && onPlatform(playerGroup.position.x, playerGroup.position.z)) {
+    if (-velY > FALL_DAMAGE_VEL) {
+      die();
+    }
     playerGroup.position.y = 0;
     velY = 0;
     onGround = true;
   }
+
+  // Fell too far
+  if (playerGroup.position.y < FALL_DEATH_Y) die();
 
   // Local limb swing — faster when sprinting
   const swingSpeed = isSprinting ? 13 : 8;
@@ -505,9 +585,6 @@ function loop(now) {
   rightLeg.rotation.x = -swing;
   leftArm.rotation.x  = -swing * 0.6;
   rightArm.rotation.x =  swing * 0.6;
-
-  playerGroup.position.x = Math.max(-BOUNDS, Math.min(BOUNDS, playerGroup.position.x));
-  playerGroup.position.z = Math.max(-BOUNDS, Math.min(BOUNDS, playerGroup.position.z));
 
   // --- Third-person camera ---
   const camBack = Math.cos(pitch) * CAM_DIST;
