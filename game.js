@@ -221,7 +221,7 @@ document.addEventListener('pointerlockchange', () => {
 document.addEventListener('mousemove', e => {
   if (!isLocked) return;
   yaw   -= e.movementX * 0.0025;
-  pitch -= e.movementY * 0.0025;
+  pitch += e.movementY * 0.0025;
   pitch  = Math.max(-0.6, Math.min(0.8, pitch)); // clamp: don't flip upside-down
 });
 
