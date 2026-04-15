@@ -7,7 +7,23 @@ import * as THREE from 'https://esm.sh/three@0.175.0';
 // ------------------------------------------------------------------
 
 const incoming = Portal.readPortalParams();
-document.getElementById('username').textContent = incoming.username;
+const usernameEl = document.getElementById('username');
+usernameEl.textContent = incoming.username;
+
+// Rename: commit on Enter or blur, revert on Escape
+usernameEl.addEventListener('keydown', e => {
+  if (e.key === 'Enter')  { e.preventDefault(); usernameEl.blur(); }
+  if (e.key === 'Escape') { usernameEl.textContent = incoming.username; usernameEl.blur(); }
+  e.stopPropagation(); // prevent WASD etc. firing while typing
+});
+usernameEl.addEventListener('blur', () => {
+  const name = usernameEl.textContent.trim().slice(0, 32) || incoming.username;
+  usernameEl.textContent = name;
+  incoming.username = name;
+  broadcastSelf();
+});
+// Also stop keyup from leaking into movement keys
+usernameEl.addEventListener('keyup', e => e.stopPropagation());
 const nextTarget = await Portal.pickPortalTarget();
 
 // ------------------------------------------------------------------
