@@ -114,6 +114,21 @@ headMesh.position.y = 1.22;
 headMesh.castShadow = true;
 playerGroup.add(headMesh);
 
+// Hat — wide brim + tall crown (top hat)
+const hatMat = new THREE.MeshStandardMaterial({ color: 0x1a0030, roughness: 0.5, metalness: 0.1 });
+const hatBand = new THREE.MeshStandardMaterial({ color: 0xc64bff, emissive: 0x4a0088, roughness: 0.3 });
+const hatBrim = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.05, 16), hatMat);
+hatBrim.position.y = 1.44;
+hatBrim.castShadow = true;
+playerGroup.add(hatBrim);
+const hatCrown = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.20, 0.42, 16), hatMat);
+hatCrown.position.y = 1.69;
+hatCrown.castShadow = true;
+playerGroup.add(hatCrown);
+const hatRibbon = new THREE.Mesh(new THREE.CylinderGeometry(0.205, 0.205, 0.07, 16), hatBand);
+hatRibbon.position.y = 1.49;
+playerGroup.add(hatRibbon);
+
 // Per-player glow
 const playerGlow = new THREE.PointLight(playerColor, 1.5, 3);
 playerGlow.position.y = 0.8;
