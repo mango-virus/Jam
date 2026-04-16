@@ -314,6 +314,33 @@ function makeCharacter(hexColor) {
   sHandle.position.y = -0.1;
   swordGroup.add(sHandle);
   rightArm.add(swordGroup);
+
+  // Boxing glove (shown in right hand when equipped)
+  const gloveGroup = new THREE.Group();
+  gloveGroup.position.set(0, -0.50, 0.06);
+  gloveGroup.visible = false;
+  // Main glove body — red sphere, wider than tall
+  const gloveMesh = new THREE.Mesh(new THREE.SphereGeometry(0.135, 10, 8),
+    new THREE.MeshStandardMaterial({ color: 0xcc2200, roughness: 0.55, metalness: 0.08 }));
+  gloveMesh.scale.set(1.35, 1.05, 1.2);
+  gloveGroup.add(gloveMesh);
+  // Knuckle ridge — slightly lighter strip across the front
+  const knuckle = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.05, 0.08),
+    new THREE.MeshStandardMaterial({ color: 0xdd3300, roughness: 0.5 }));
+  knuckle.position.set(0, 0.04, 0.12);
+  gloveGroup.add(knuckle);
+  // Wrist cuff — white wrap
+  const gloveCuff = new THREE.Mesh(new THREE.CylinderGeometry(0.10, 0.10, 0.10, 12),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85 }));
+  gloveCuff.position.y = 0.16;
+  gloveGroup.add(gloveCuff);
+  // Velcro strap — dark strip on cuff
+  const strap = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.03, 0.11),
+    new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.9 }));
+  strap.position.set(0, 0.19, 0.04);
+  gloveGroup.add(strap);
+  rightArm.add(gloveGroup);
+
   normalBody.add(rightArm);
 
   // Legs
@@ -496,7 +523,7 @@ function makeCharacter(hexColor) {
   ghostGlow.position.y = 0.9;
   ghostBody.add(ghostGlow);
 
-  return { group, normalBody, ghostBody, leftArm, rightArm, leftLeg, rightLeg, swordGroup, shieldEquip, shieldEmblem, armorGroup };
+  return { group, normalBody, ghostBody, leftArm, rightArm, leftLeg, rightLeg, swordGroup, gloveGroup, shieldEquip, shieldEmblem, armorGroup };
 }
 
 // ------------------------------------------------------------------
@@ -505,7 +532,8 @@ function makeCharacter(hexColor) {
 
 const { group: playerGroup, normalBody: playerNormalBody, ghostBody: playerGhostBody,
         leftArm, rightArm, leftLeg, rightLeg,
-        swordGroup: playerSword, shieldEquip: playerShield, shieldEmblem: playerShieldEmblem,
+        swordGroup: playerSword, gloveGroup: playerGlove,
+        shieldEquip: playerShield, shieldEmblem: playerShieldEmblem,
         armorGroup: playerArmorGroup } = makeCharacter('#' + incoming.color);
 scene.add(playerGroup);
 
@@ -514,10 +542,11 @@ scene.add(playerGroup);
 // Item system
 // ------------------------------------------------------------------
 
-const MAX_ITEMS      = 5;
-const ITEM_INTERVAL  = 10000; // ms between item spawn attempts
-const ITEM_PICKUP_R  = 1.4;   // metres to pick up item
+const MAX_ITEMS       = 5;
+const ITEM_INTERVAL   = 10000; // ms between item spawn attempts
+const ITEM_PICKUP_R   = 1.4;   // metres to pick up item
 const SWORD_KNOCKBACK = 38;
+const GLOVE_KNOCKBACK = 70;
 
 let itemTimer  = Date.now() + 5000; // first item after 5s
 const groundItems = []; // { group, type, x, z }
@@ -525,10 +554,13 @@ let hasSword       = false;
 let swordDurability  = 0;
 let hasShield      = false;
 let shieldDurability = 0;
+let hasGlove       = false;
+let gloveDurability  = 0;
 let isBlocking     = false;
 
 const SWORD_DURABILITY  = 10;
 const SHIELD_DURABILITY = 7;
+const GLOVE_DURABILITY  = 4;
 const durabilityEl = document.getElementById('durability');
 
 // Safe random position on the platform (away from edges, pillars, other items, unstable tiles).
@@ -561,7 +593,7 @@ function makeGroundItem(type, x, z) {
       new THREE.MeshStandardMaterial({ color: 0x5c3a1e, roughness: 0.8 }));
     handle.position.y = -0.05;
     g.add(handle);
-  } else { // shield
+  } else if (type === 'shield') {
     const face = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.48, 0.07),
       new THREE.MeshStandardMaterial({ color: 0x2244cc, roughness: 0.5, metalness: 0.3 }));
     face.position.y = 0.28;
@@ -570,6 +602,19 @@ function makeGroundItem(type, x, z) {
       new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.8 }));
     emblem.position.y = 0.28;
     g.add(emblem);
+  } else { // glove
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8),
+      new THREE.MeshStandardMaterial({ color: 0xcc2200, roughness: 0.55, metalness: 0.08 }));
+    body.scale.set(1.35, 1.05, 1.2);
+    body.position.y = 0.24;
+    g.add(body);
+    const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.11, 12),
+      new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85 }));
+    cuff.position.y = 0.42;
+    g.add(cuff);
+    const glow = new THREE.PointLight(0xff4400, 0.6, 2.5);
+    glow.position.y = 0.3;
+    g.add(glow);
   }
   g.position.set(x, 0.1, z);
   scene.add(g);
@@ -587,18 +632,20 @@ function updateDurabilityHUD() {
   if (!durabilityEl) return;
   const parts = [];
   if (hasSword)  parts.push(`⚔ ${pipBar(swordDurability,  SWORD_DURABILITY)}`);
+  if (hasGlove)  parts.push(`🥊 ${pipBar(gloveDurability,  GLOVE_DURABILITY)}`);
   if (hasShield) parts.push(`🛡 ${pipBar(shieldDurability, SHIELD_DURABILITY)}`);
   durabilityEl.innerHTML = parts.join('&nbsp;&nbsp;');
 }
 
 function equipItem(type) {
   if (type === 'sword') {
-    hasSword = true;
-    swordDurability = SWORD_DURABILITY;
+    hasSword = true; swordDurability = SWORD_DURABILITY;
     playerSword.visible = true;
+  } else if (type === 'glove') {
+    hasGlove = true; gloveDurability = GLOVE_DURABILITY;
+    playerGlove.visible = true;
   } else {
-    hasShield = true;
-    shieldDurability = SHIELD_DURABILITY;
+    hasShield = true; shieldDurability = SHIELD_DURABILITY;
     playerShield.visible = true;
   }
   updateDurabilityHUD();
@@ -607,6 +654,12 @@ function equipItem(type) {
 function breakSword() {
   hasSword = false; swordDurability = 0;
   playerSword.visible = false;
+  updateDurabilityHUD();
+}
+
+function breakGlove() {
+  hasGlove = false; gloveDurability = 0;
+  playerGlove.visible = false;
   updateDurabilityHUD();
 }
 
@@ -621,13 +674,15 @@ function dropItem() {
   const dropAngle = playerGroup.rotation.y + Math.PI;
   if (hasSword) {
     groundItems.push(makeGroundItem('sword', px + Math.sin(dropAngle) * 1.2, pz + Math.cos(dropAngle) * 1.2));
-    hasSword = false; swordDurability = 0;
-    playerSword.visible = false;
+    hasSword = false; swordDurability = 0; playerSword.visible = false;
+  }
+  if (hasGlove) {
+    groundItems.push(makeGroundItem('glove', px + Math.sin(dropAngle) * 1.2, pz + Math.cos(dropAngle) * 1.2));
+    hasGlove = false; gloveDurability = 0; playerGlove.visible = false;
   }
   if (hasShield) {
     groundItems.push(makeGroundItem('shield', px + Math.sin(dropAngle) * 0.6, pz + Math.cos(dropAngle) * 0.6));
-    hasShield = false; shieldDurability = 0;
-    playerShield.visible = false;
+    hasShield = false; shieldDurability = 0; playerShield.visible = false;
   }
   updateDurabilityHUD();
 }
@@ -666,6 +721,7 @@ function broadcastSelf() {
     username: incoming.username,
     moving:   isMoving,
     sword:    hasSword,
+    glove:    hasGlove,
     shield:   hasShield,
     punching: punchTimer > 0,
     blocking: hasShield && isBlocking,
@@ -705,14 +761,16 @@ function addPeer(id, data) {
   char.group.position.set(data.x ?? 0, 0, data.z ?? 0);
   char.group.rotation.y = data.rotY ?? 0;
   scene.add(char.group);
-  peers.set(id, { ...char, tx: data.x ?? 0, ty: data.y ?? 0, tz: data.z ?? 0, rotY: data.rotY ?? 0, moving: false, swing: 0, punchTimer: 0, blocking: false, username: data.username, redrawLabel, pSword: !!data.sword, pShield: !!data.shield, pColor: data.color || 'ffffff', lives: data.lives ?? 3, isGhost: !!data.isGhost, hasArmor: !!data.hasArmor, ready: !!data.ready });
+  peers.set(id, { ...char, tx: data.x ?? 0, ty: data.y ?? 0, tz: data.z ?? 0, rotY: data.rotY ?? 0, moving: false, swing: 0, punchTimer: 0, blocking: false, username: data.username, redrawLabel, pSword: !!data.sword, pGlove: !!data.glove, pShield: !!data.shield, pColor: data.color || 'ffffff', lives: data.lives ?? 3, isGhost: !!data.isGhost, hasArmor: !!data.hasArmor, ready: !!data.ready });
   updateMenuReadyList();
 }
 
-function applyPeerEquip(peer, sword, shield) {
+function applyPeerEquip(peer, sword, glove, shield) {
   peer.pSword  = sword;
+  peer.pGlove  = glove;
   peer.pShield = shield;
   if (peer.swordGroup)  peer.swordGroup.visible  = !!sword;
+  if (peer.gloveGroup)  peer.gloveGroup.visible  = !!glove;
   if (peer.shieldEquip) peer.shieldEquip.visible  = !!shield;
 }
 
@@ -808,8 +866,8 @@ async function setupMultiplayer() {
           peer.username = data.username;
           peer.redrawLabel(data.username || '?');
         }
-        if (!!data.sword !== peer.pSword || !!data.shield !== peer.pShield)
-          applyPeerEquip(peer, !!data.sword, !!data.shield);
+        if (!!data.sword !== peer.pSword || !!data.glove !== peer.pGlove || !!data.shield !== peer.pShield)
+          applyPeerEquip(peer, !!data.sword, !!data.glove, !!data.shield);
         if (data.punching && peer.punchTimer <= 0) peer.punchTimer = 0.35;
         peer.blocking = !!data.blocking;
         if (!!data.isGhost !== peer.isGhost) applyPeerGhostMode(peer, !!data.isGhost);
@@ -883,9 +941,14 @@ document.addEventListener('keydown', e => {
       if (Math.hypot(px - it.x, pz - it.z) < ITEM_PICKUP_R) {
         // Drop same-slot item first if already held
         const dropAngle = playerGroup.rotation.y + Math.PI;
-        if (it.type === 'sword' && hasSword) {
+        // Sword and glove share the right-hand weapon slot — swap out the current one
+        if ((it.type === 'sword' || it.type === 'glove') && hasSword) {
           groundItems.push(makeGroundItem('sword', px + Math.sin(dropAngle) * 1.2, pz + Math.cos(dropAngle) * 1.2));
           hasSword = false; swordDurability = 0; playerSword.visible = false;
+        }
+        if ((it.type === 'sword' || it.type === 'glove') && hasGlove) {
+          groundItems.push(makeGroundItem('glove', px + Math.sin(dropAngle) * 1.2, pz + Math.cos(dropAngle) * 1.2));
+          hasGlove = false; gloveDurability = 0; playerGlove.visible = false;
         }
         if (it.type === 'shield' && hasShield) {
           groundItems.push(makeGroundItem('shield', px + Math.sin(dropAngle) * 0.6, pz + Math.cos(dropAngle) * 0.6));
@@ -1015,6 +1078,7 @@ function enterGhostMode() {
   hasFallenOff = false; // ghosts fly freely
   // Drop items
   hasSword = false; swordDurability = 0; playerSword.visible = false;
+  hasGlove = false; gloveDurability = 0; playerGlove.visible = false;
   hasShield = false; shieldDurability = 0; playerShield.visible = false;
   updateDurabilityHUD();
   // Remove armor
@@ -1246,11 +1310,14 @@ function doPunch() {
 
   if (nearest && sendPunch) {
     const { id, dx, dz, dist } = nearest;
-    const force = hasSword ? SWORD_KNOCKBACK : KNOCKBACK_H;
+    const force = hasSword ? SWORD_KNOCKBACK : hasGlove ? GLOVE_KNOCKBACK : KNOCKBACK_H;
     sendPunch({ kx: dx / dist, kz: dz / dist, force }, id);
     if (hasSword) {
       swordDurability--;
       if (swordDurability <= 0) breakSword(); else updateDurabilityHUD();
+    } else if (hasGlove) {
+      gloveDurability--;
+      if (gloveDurability <= 0) breakGlove(); else updateDurabilityHUD();
     }
   }
 }
@@ -1523,7 +1590,8 @@ function loop(now) {
     itemTimer = Date.now() + ITEM_INTERVAL;
     const pos = randomItemPos();
     if (pos) {
-      const type = Math.random() < 0.5 ? 'sword' : 'shield';
+      const r = Math.random();
+    const type = r < 0.34 ? 'sword' : r < 0.67 ? 'shield' : 'glove';
       groundItems.push(makeGroundItem(type, pos.x, pos.z));
     }
   }
