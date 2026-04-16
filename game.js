@@ -939,7 +939,12 @@ async function setupMultiplayer() {
       const kb = force ?? KNOCKBACK_H;
       velX = kx * kb;
       velZ = kz * kb;
-      velY = Math.max(velY, ghostPunch ? GHOST_KNOCKBACK_UP : KNOCKBACK_UP);
+      if (homeRun) {
+        // 45° launch: vertical speed matches horizontal magnitude
+        velY = kb;
+      } else {
+        velY = Math.max(velY, ghostPunch ? GHOST_KNOCKBACK_UP : KNOCKBACK_UP);
+      }
       onGround = false;
       // Lightning effect on the receiver's end for home-run hits
       if (homeRun) spawnLightningEffect(playerGroup.position.x, playerGroup.position.y, playerGroup.position.z);
