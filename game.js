@@ -24,7 +24,7 @@ usernameEl.addEventListener('blur', () => {
 });
 // Also stop keyup from leaking into movement keys
 usernameEl.addEventListener('keyup', e => e.stopPropagation());
-const nextTarget = await Portal.pickPortalTarget();
+const LOBBY_URL = 'https://callumhyoung.github.io/gamejam-lobby/';
 
 // ------------------------------------------------------------------
 // Renderer
@@ -509,48 +509,6 @@ const { group: playerGroup, normalBody: playerNormalBody, ghostBody: playerGhost
         armorGroup: playerArmorGroup } = makeCharacter('#' + incoming.color);
 scene.add(playerGroup);
 
-// ------------------------------------------------------------------
-// Portals
-// ------------------------------------------------------------------
-
-function makePortal(color) {
-  const group = new THREE.Group();
-  const plane = new THREE.Mesh(
-    new THREE.PlaneGeometry(2, 3.5),
-    new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity: 0.7 })
-  );
-  plane.position.y = 1.75;
-  group.add(plane);
-  const edges = new THREE.LineSegments(
-    new THREE.EdgesGeometry(new THREE.BoxGeometry(2.1, 3.6, 0.05)),
-    new THREE.LineBasicMaterial({ color })
-  );
-  edges.position.y = 1.75;
-  group.add(edges);
-  const light = new THREE.PointLight(color, 3, 10);
-  light.position.y = 1.75;
-  group.add(light);
-  return { group, plane, light };
-}
-
-const exitPortal = makePortal(0xc64bff);
-exitPortal.group.position.set(20, 0, 0);
-exitPortal.group.rotation.y = Math.PI / 2;
-scene.add(exitPortal.group);
-
-let returnPortal = null;
-if (incoming.ref) {
-  returnPortal = makePortal(0x4ff0ff);
-  returnPortal.group.position.set(-20, 0, 0);
-  returnPortal.group.rotation.y = Math.PI / 2;
-  scene.add(returnPortal.group);
-}
-
-// Lobby portal — always present, leads to The Lobby hub
-const LOBBY_URL = 'https://callumhyoung.github.io/gamejam-lobby/';
-const lobbyPortal = makePortal(0xffb300);
-lobbyPortal.group.position.set(0, 0, -20);
-scene.add(lobbyPortal.group);
 
 // ------------------------------------------------------------------
 // Item system
@@ -674,35 +632,6 @@ function dropItem() {
   updateDurabilityHUD();
 }
 
-// Canvas-texture sprite labels (portals + peer names)
-function makeLabel(text, color, width = 512, height = 80, fontSize = 28) {
-  const c = document.createElement('canvas');
-  c.width = width; c.height = height;
-  const cx = c.getContext('2d');
-  cx.clearRect(0, 0, width, height);
-  cx.fillStyle = color;
-  cx.font = `bold ${fontSize}px ui-sans-serif, system-ui, sans-serif`;
-  cx.textAlign = 'center';
-  cx.fillText(text, width / 2, height * 0.7);
-  const sprite = new THREE.Sprite(
-    new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true })
-  );
-  sprite.scale.set(5, 0.8, 1);
-  return sprite;
-}
-
-const exitLabel = makeLabel(nextTarget ? `→ ${nextTarget.title}` : '→ exit', '#c64bff');
-exitLabel.position.set(20, 5, 0);
-scene.add(exitLabel);
-if (returnPortal) {
-  const rl = makeLabel('← back', '#4ff0ff');
-  rl.position.set(-20, 5, 0);
-  scene.add(rl);
-}
-
-const lobbyLabel = makeLabel('⬡ The Lobby', '#ffb300');
-lobbyLabel.position.set(0, 5, -20);
-scene.add(lobbyLabel);
 
 // ------------------------------------------------------------------
 // Multiplayer via Trystero (optional, non-blocking)
@@ -913,7 +842,6 @@ const keys = {};
 let yaw = 0;
 let pitch = 0.2;
 let isLocked = false;
-let redirecting = false;
 
 renderer.domElement.addEventListener('click', () => {
   if (gameState === 'playing') renderer.domElement.requestPointerLock();
@@ -1613,16 +1541,6 @@ function loop(now) {
     it.group.rotation.y += dt * 1.2;
   }
 
-  // --- Animate portals ---
-  const pulse = 0.7 + 0.3 * Math.sin(time * 3);
-  exitPortal.light.intensity = 2.5 + 1.5 * pulse;
-  exitPortal.plane.material.opacity = 0.45 + 0.3 * pulse;
-  if (returnPortal) {
-    returnPortal.light.intensity = 2.5 + 1.5 * pulse;
-    returnPortal.plane.material.opacity = 0.45 + 0.3 * pulse;
-  }
-  lobbyPortal.light.intensity = 2.5 + 1.5 * pulse;
-  lobbyPortal.plane.material.opacity = 0.45 + 0.3 * pulse;
 
   // --- Peer interpolation & limb animation ---
   for (const peer of peers.values()) {
@@ -1666,41 +1584,6 @@ function loop(now) {
     broadcastSelf();
   }
 
-  // ------------------------------------------------------------------
-  // Portal collision — keep these calls
-  // ------------------------------------------------------------------
-  if (!redirecting) {
-    const px = playerGroup.position.x;
-    const pz = playerGroup.position.z;
-    if (Math.hypot(px - exitPortal.group.position.x, pz - exitPortal.group.position.z) < 2) {
-      if (nextTarget?.url) {
-        redirecting = true;
-        Portal.sendPlayerThroughPortal(nextTarget.url, {
-          username: incoming.username,
-          color:    incoming.color,
-          speed:    SPEED,
-        });
-      }
-    }
-    if (returnPortal && incoming.ref) {
-      if (Math.hypot(px - returnPortal.group.position.x, pz - returnPortal.group.position.z) < 2) {
-        redirecting = true;
-        Portal.sendPlayerThroughPortal(incoming.ref, {
-          username: incoming.username,
-          color:    incoming.color,
-          speed:    SPEED,
-        });
-      }
-    }
-    if (Math.hypot(px - lobbyPortal.group.position.x, pz - lobbyPortal.group.position.z) < 2) {
-      redirecting = true;
-      Portal.sendPlayerThroughPortal(LOBBY_URL, {
-        username: incoming.username,
-        color:    incoming.color,
-        speed:    SPEED,
-      });
-    }
-  }
 
   renderer.render(scene, camera);
 }
@@ -1767,6 +1650,15 @@ if (menuNameInput) {
 usernameEl.addEventListener('blur', () => {
   if (menuNameInput) menuNameInput.value = incoming.username;
 }, true);
+
+// Lobby button
+document.getElementById('btn-lobby')?.addEventListener('click', () => {
+  Portal.sendPlayerThroughPortal(LOBBY_URL, {
+    username: incoming.username,
+    color:    incoming.color,
+    speed:    SPEED,
+  });
+});
 
 // Show lobby menu on load
 if (menuEl) menuEl.classList.add('active');
