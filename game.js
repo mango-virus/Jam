@@ -131,7 +131,43 @@ for (const [x, z] of PILLARS) {
   const glow = new THREE.PointLight(new THREE.Color().setHSL(hue, 1, 0.6), 0.8, 6);
   glow.position.set(x, h + 0.5, z);
   scene.add(glow);
-  pillarData.push({ x, z, r: w / 2 }); // half-width as collision radius
+  pillarData.push({ x, z, r: w / 2, topY: h });
+}
+
+// ------------------------------------------------------------------
+// Elevated step platforms
+// ------------------------------------------------------------------
+
+const CLIMB_SPEED   = 2.5;   // m/s upward when pressing into a climbable object
+const MAX_CLIMBABLE = 2.2;   // max height above current Y that can be climbed
+
+const elevatedPlatforms = []; // { x, z, hw, hd, topY }
+
+const EP_DEFS = [
+  { x:  7,  z: -5,  w: 5.0, d: 3.0, h: 0.8,  color: 0x3a1858 },
+  { x: -6,  z: -8,  w: 4.0, d: 4.0, h: 1.2,  color: 0x1a2a50 },
+  { x:  1,  z: 10,  w: 5.0, d: 2.5, h: 0.7,  color: 0x1e3830 },
+  { x:-10,  z: 11,  w: 3.5, d: 4.0, h: 1.6,  color: 0x3a1818 },
+  { x:  8,  z:-11,  w: 4.0, d: 4.0, h: 1.0,  color: 0x2a2050 },
+];
+
+for (const d of EP_DEFS) {
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(d.w, d.h, d.d),
+    new THREE.MeshStandardMaterial({ color: d.color, roughness: 0.8, metalness: 0.05 })
+  );
+  mesh.position.set(d.x, d.h / 2, d.z);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  scene.add(mesh);
+  // Subtle grid on top surface
+  const epGrid = new THREE.GridHelper(
+    Math.max(d.w, d.d), Math.ceil(Math.max(d.w, d.d)),
+    0x2a085a, 0x1e0545
+  );
+  epGrid.position.set(d.x, d.h + 0.001, d.z);
+  scene.add(epGrid);
+  elevatedPlatforms.push({ x: d.x, z: d.z, hw: d.w / 2, hd: d.d / 2, topY: d.h });
 }
 
 // ------------------------------------------------------------------
@@ -858,6 +894,27 @@ function onPlatform(x, z) {
   return Math.abs(x) < PLATFORM_HALF && Math.abs(z) < PLATFORM_HALF;
 }
 
+// Returns the highest surface Y under (x, z), or null if nothing below.
+function getSurfaceBelow(x, z) {
+  let best = null;
+  // Main platform
+  if (onPlatform(x, z)) best = 0;
+  // Elevated platforms (AABB)
+  for (const ep of elevatedPlatforms) {
+    if (x >= ep.x - ep.hw && x <= ep.x + ep.hw && z >= ep.z - ep.hd && z <= ep.z + ep.hd) {
+      if (best === null || ep.topY > best) best = ep.topY;
+    }
+  }
+  // Pillar tops (within the pillar's circle)
+  const PLAYER_R = 0.32;
+  for (const p of pillarData) {
+    if (Math.hypot(x - p.x, z - p.z) < p.r + PLAYER_R * 0.4) {
+      if (best === null || p.topY > best) best = p.topY;
+    }
+  }
+  return best;
+}
+
 // Returns the push vector needed to move point (px,pz) outside circle (cx,cz,r), or null.
 function circleOverlap(px, pz, cx, cz, r) {
   const dx = px - cx, dz = pz - cz;
@@ -964,12 +1021,60 @@ function loop(now) {
   // --- Collision resolution ---
   const PLAYER_R = 0.32;
 
-  // vs pillars (solid — player pushed fully out)
+  // vs pillars — climb if top is within reach, otherwise push out
   for (const p of pillarData) {
     const ov = circleOverlap(playerGroup.position.x, playerGroup.position.z, p.x, p.z, p.r + PLAYER_R);
     if (ov) {
-      playerGroup.position.x += ov.nx;
-      playerGroup.position.z += ov.nz;
+      const heightDiff = p.topY - playerGroup.position.y;
+      if (heightDiff > 0 && heightDiff <= MAX_CLIMBABLE) {
+        // Climbing: boost upward, small nudge out to prevent deep clip
+        if (velY < CLIMB_SPEED) velY = CLIMB_SPEED;
+        onGround = false;
+        playerGroup.position.x += ov.nx * 0.12;
+        playerGroup.position.z += ov.nz * 0.12;
+      } else if (playerGroup.position.y < p.topY) {
+        // Too tall or below — solid wall
+        playerGroup.position.x += ov.nx;
+        playerGroup.position.z += ov.nz;
+      }
+      // playerGroup.position.y >= p.topY: player on top, no side push needed
+    }
+  }
+
+  // vs elevated platforms — climb if top within reach, otherwise push out
+  for (const ep of elevatedPlatforms) {
+    const px = playerGroup.position.x, pz = playerGroup.position.z, py = playerGroup.position.y;
+    if (py >= ep.topY) continue; // above the platform — no side collision
+    // Closest point on AABB to player XZ
+    const cx = Math.max(ep.x - ep.hw, Math.min(ep.x + ep.hw, px));
+    const cz = Math.max(ep.z - ep.hd, Math.min(ep.z + ep.hd, pz));
+    const dx = px - cx, dz = pz - cz;
+    const dist2 = dx * dx + dz * dz;
+    if (dist2 >= PLAYER_R * PLAYER_R) continue;
+    const dist = Math.sqrt(dist2);
+    const heightDiff = ep.topY - py;
+    if (heightDiff > 0 && heightDiff <= MAX_CLIMBABLE) {
+      // Climbing
+      if (velY < CLIMB_SPEED) velY = CLIMB_SPEED;
+      onGround = false;
+      if (dist > 0.001) {
+        const s = (PLAYER_R - dist) / dist * 0.12;
+        playerGroup.position.x += dx * s;
+        playerGroup.position.z += dz * s;
+      }
+    } else {
+      // Solid — push out
+      if (dist > 0.001) {
+        const s = (PLAYER_R - dist) / dist;
+        playerGroup.position.x += dx * s;
+        playerGroup.position.z += dz * s;
+      } else {
+        // Player center inside box — push on shortest axis
+        const overX = ep.hw + PLAYER_R - Math.abs(px - ep.x);
+        const overZ = ep.hd + PLAYER_R - Math.abs(pz - ep.z);
+        if (overX < overZ) playerGroup.position.x += Math.sign(px - ep.x) * overX;
+        else               playerGroup.position.z += Math.sign(pz - ep.z) * overZ;
+      }
     }
   }
 
@@ -999,19 +1104,24 @@ function loop(now) {
   if (!onGround) velY -= GRAVITY * dt;
   playerGroup.position.y += velY * dt;
 
-  // Walked off edge — drop
-  if (onGround && !onPlatform(playerGroup.position.x, playerGroup.position.z)) {
-    onGround = false;
+  // Walked off current surface — check if surface is no longer underfoot
+  if (onGround) {
+    const surf = getSurfaceBelow(playerGroup.position.x, playerGroup.position.z);
+    if (surf === null || surf < playerGroup.position.y - 0.1) onGround = false;
   }
 
-  // Landing
-  if (!onGround && playerGroup.position.y <= 0 && onPlatform(playerGroup.position.x, playerGroup.position.z)) {
-    if (-velY > FALL_DAMAGE_VEL) {
-      die();
+  // Landing — snap to highest surface when descending through it
+  if (!onGround && velY <= 0) {
+    const surf = getSurfaceBelow(playerGroup.position.x, playerGroup.position.z);
+    if (surf !== null && playerGroup.position.y <= surf + 0.05) {
+      if (-velY > FALL_DAMAGE_VEL) {
+        die();
+      } else {
+        playerGroup.position.y = surf;
+        velY = 0;
+        onGround = true;
+      }
     }
-    playerGroup.position.y = 0;
-    velY = 0;
-    onGround = true;
   }
 
   // Fell too far
