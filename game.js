@@ -248,8 +248,11 @@ function rebuildArena(seed) {
     const len = 6 + rand() * 7, h = 0.7 + rand() * 0.8, thick = 0.9;
     const angle = rand() * Math.PI;
     addMesh(new THREE.BoxGeometry(len, h, thick), mat(hue, 0.18), x, h/2, z, angle);
-    // Low wall as a very thin EP so players can stand on top
-    addEP(x, z, len/2, thick/2, h);
+    // Project rotated box extents onto world axes for correct AABB collision
+    const ca = Math.abs(Math.cos(angle)), sa = Math.abs(Math.sin(angle));
+    const hw = len/2 * ca + thick/2 * sa;
+    const hd = len/2 * sa + thick/2 * ca;
+    addEP(x, z, hw, hd, h);
     occupied.push({ x, z, r: len/2 });
   }
 
