@@ -684,15 +684,38 @@ function makeGroundItem(type, x, z) {
     g.add(emblem);
   } else if (type === 'bat') {
     const woodMat = new THREE.MeshStandardMaterial({ color: 0x8b4513, roughness: 0.75 });
-    const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.035, 0.36, 8), woodMat);
-    handle.position.y = 0.22; handle.rotation.z = 0.35;
-    g.add(handle);
-    const taper = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.035, 0.14, 8), woodMat);
-    taper.position.set(0.10, 0.42, 0); taper.rotation.z = 0.35;
-    g.add(taper);
+    const tapeMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 });
+    // Build all pieces in a sub-group along the Y axis so they connect seamlessly,
+    // then tilt the whole sub-group as one unit.
+    const batMesh = new THREE.Group();
+    // Knob at very bottom (y=0 → 0.06)
+    const knob = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.04, 0.06, 8), woodMat);
+    knob.position.y = 0.03;
+    batMesh.add(knob);
+    // Handle (y=0.06 → 0.38)
+    const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.04, 0.32, 8), woodMat);
+    handle.position.y = 0.22;
+    batMesh.add(handle);
+    // Grip tape (y=0.06 → 0.22)
+    const tape = new THREE.Mesh(new THREE.CylinderGeometry(0.033, 0.042, 0.16, 8), tapeMat);
+    tape.position.y = 0.14;
+    batMesh.add(tape);
+    // Taper (y=0.38 → 0.52)
+    const taper = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.03, 0.14, 8), woodMat);
+    taper.position.y = 0.45;
+    batMesh.add(taper);
+    // Barrel (y=0.52 → 0.78)
     const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.07, 0.26, 10), woodMat);
-    barrel.position.set(0.18, 0.56, 0); barrel.rotation.z = 0.35;
-    g.add(barrel);
+    barrel.position.y = 0.65;
+    batMesh.add(barrel);
+    // End cap
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.09, 0.05, 10), woodMat);
+    cap.position.y = 0.805;
+    batMesh.add(cap);
+    // Tilt the whole assembled bat as one piece
+    batMesh.rotation.z = 0.38;
+    batMesh.position.y = 0.05;
+    g.add(batMesh);
   } else { // glove
     const body = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8),
       new THREE.MeshStandardMaterial({ color: 0xcc2200, roughness: 0.55, metalness: 0.08 }));
