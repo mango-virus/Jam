@@ -177,7 +177,7 @@ function rebuildArena(seed) {
   // ── Structure builders ────────────────────────────────────────────
 
   function spawnPillar(x, z) {
-    const h = 2 + rand() * 5, w = 0.45 + rand() * 1.3;
+    const h = 3 + rand() * 7, w = 0.7 + rand() * 1.8;
     const hue = rand();
     const shape = Math.floor(rand() * 3);
     let geo;
@@ -192,8 +192,8 @@ function rebuildArena(seed) {
 
   function spawnWatchtower(x, z) {
     const hue = rand();
-    const stemH = 3 + rand() * 3, stemW = 0.5;
-    const capW = 2.8 + rand() * 1.4, capH = 0.5;
+    const stemH = 4 + rand() * 4, stemW = 0.7;
+    const capW = 4.0 + rand() * 2.0, capH = 0.6;
     // Stem
     addMesh(new THREE.CylinderGeometry(stemW/2, stemW/2, stemH, 8), mat(hue, 0.2), x, stemH/2, z);
     addPillarCol(x, z, stemW/2, stemH);
@@ -208,8 +208,8 @@ function rebuildArena(seed) {
 
   function spawnArch(x, z) {
     const hue = rand();
-    const legH = 2.5 + rand() * 2, legW = 0.6;
-    const span = 3.5 + rand() * 2;
+    const legH = 3.5 + rand() * 3, legW = 0.9;
+    const span = 5.0 + rand() * 3;
     const angle = rand() * Math.PI;
     const dx = Math.cos(angle) * span/2, dz = Math.sin(angle) * span/2;
     // Two legs
@@ -227,10 +227,10 @@ function rebuildArena(seed) {
   function spawnStaircase(x, z) {
     const hue = rand();
     const angle = rand() * Math.PI * 2;
-    const stepW = 2.2 + rand(), stepD = 1.4;
+    const stepW = 3.2 + rand() * 1.5, stepD = 1.9;
     const steps = 3;
     for (let s = 0; s < steps; s++) {
-      const sh = 0.6 + s * 0.7;
+      const sh = 0.8 + s * 1.0;
       const ox = Math.cos(angle) * stepD * (s - 1);
       const oz = Math.sin(angle) * stepD * (s - 1);
       addMesh(new THREE.BoxGeometry(stepW, sh, stepD), mat(hue, 0.2 + s * 0.05), x + ox, sh/2, z + oz);
@@ -245,7 +245,7 @@ function rebuildArena(seed) {
 
   function spawnLowWall(x, z) {
     const hue = rand();
-    const len = 4 + rand() * 5, h = 0.5 + rand() * 0.6, thick = 0.6;
+    const len = 6 + rand() * 7, h = 0.7 + rand() * 0.8, thick = 0.9;
     const angle = rand() * Math.PI;
     addMesh(new THREE.BoxGeometry(len, h, thick), mat(hue, 0.18), x, h/2, z, angle);
     // Low wall as a very thin EP so players can stand on top
@@ -259,9 +259,9 @@ function rebuildArena(seed) {
     const baseAngle = rand() * Math.PI * 2;
     for (let i = 0; i < count; i++) {
       const a = baseAngle + (i / count) * Math.PI * 2;
-      const dist = 1.2 + rand() * 0.8;
+      const dist = 1.5 + rand() * 1.2;
       const rx = x + Math.cos(a) * dist, rz = z + Math.sin(a) * dist;
-      const ph = 0.8 + rand() * 3.5, pw = 0.35 + rand() * 0.6;
+      const ph = 1.5 + rand() * 5.0, pw = 0.5 + rand() * 0.9;
       addMesh(new THREE.CylinderGeometry(pw/2, pw/2, ph, 7), mat(hue, 0.15 + rand() * 0.1), rx, ph/2, rz);
       addPillarCol(rx, rz, pw/2, ph);
     }
@@ -271,7 +271,7 @@ function rebuildArena(seed) {
 
   function spawnObelisk(x, z) {
     const hue = rand();
-    const h = 4 + rand() * 4, w = 0.5 + rand() * 0.5;
+    const h = 6 + rand() * 6, w = 0.7 + rand() * 0.8;
     // Tapered shaft
     addMesh(new THREE.CylinderGeometry(w * 0.15, w * 0.5, h, 4), mat(hue, 0.28), x, h/2, z, rand() * Math.PI);
     // Pyramid tip
@@ -286,9 +286,9 @@ function rebuildArena(seed) {
     const count = 3 + Math.floor(rand() * 4);
     for (let i = 0; i < count; i++) {
       const a = (i / count) * Math.PI * 2 + rand() * 0.5;
-      const dist = rand() * 1.2;
+      const dist = rand() * 1.8;
       const cx = x + Math.cos(a) * dist, cz = z + Math.sin(a) * dist;
-      const ch = 1.0 + rand() * 2.5, cw = 0.2 + rand() * 0.35;
+      const ch = 1.5 + rand() * 3.5, cw = 0.3 + rand() * 0.55;
       const m = addMesh(new THREE.ConeGeometry(cw, ch, 5), mat(hue, 0.35, 0.9), cx, ch/2, cz);
       m.rotation.z = (rand() * 0.24 - 0.12); // subtle cosmetic lean only (max ~7°)
       m.rotation.y = rand() * Math.PI * 2;
@@ -300,8 +300,8 @@ function rebuildArena(seed) {
 
   function spawnMonument(x, z) {
     const hue = rand();
-    const baseW = 3.5 + rand() * 2, baseH = 0.8 + rand() * 0.6;
-    const towerH = 3 + rand() * 3, towerW = 0.7;
+    const baseW = 5.0 + rand() * 3, baseH = 1.0 + rand() * 0.8;
+    const towerH = 4 + rand() * 4, towerW = 1.0;
     // Wide base pedestal
     addMesh(new THREE.BoxGeometry(baseW, baseH, baseW), mat(hue, 0.18), x, baseH/2, z);
     addEP(x, z, baseW/2, baseW/2, baseH);
@@ -316,8 +316,8 @@ function rebuildArena(seed) {
 
   function spawnToppledColumn(x, z) {
     const hue = rand();
-    const ph  = 2.5 + rand() * 3.5; // length of the column
-    const pw  = 0.5 + rand() * 0.55; // diameter
+    const ph  = 4.0 + rand() * 5.0; // length of the column
+    const pw  = 0.8 + rand() * 0.8; // diameter
     const r   = pw / 2;
     const angle = rand() * Math.PI; // which direction it's fallen
 
@@ -346,7 +346,7 @@ function rebuildArena(seed) {
 
   // ── Place structures ─────────────────────────────────────────────
   const TYPES = ['pillar','pillar','watchtower','arch','staircase','lowwall','ruins','obelisk','crystal','monument','toppled','toppled'];
-  const count = 9 + Math.floor(rand() * 5); // 9–13 structures
+  const count = 14 + Math.floor(rand() * 7); // 14–20 structures
 
   for (let i = 0; i < count; i++) {
     const type = TYPES[Math.floor(rand() * TYPES.length)];
