@@ -224,12 +224,12 @@
 
   function setVolume(v) {
     volumeLevel = v;
-    if (master) master.gain.setTargetAtTime(v, ctx.currentTime, 0.05);
+    if (!muted && master) master.gain.setTargetAtTime(v, ctx.currentTime, 0.05);
   }
 
   function toggle() {
     muted = !muted;
-    setVolume(muted ? 0 : volumeLevel || 0.38);
+    if (master) master.gain.setTargetAtTime(muted ? 0 : volumeLevel, ctx.currentTime, 0.05);
     return muted;
   }
 

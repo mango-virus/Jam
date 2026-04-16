@@ -1095,12 +1095,30 @@ renderer.domElement.addEventListener('click', () => {
   window.GameMusic?.start();
 });
 
-// Mute button
-const btnMute = document.getElementById('btn-mute');
+// Mute button + volume slider
+const btnMute      = document.getElementById('btn-mute');
+const volumeSlider = document.getElementById('volume-slider');
+
 if (btnMute) {
   btnMute.addEventListener('click', () => {
+    window.GameMusic?.start();
     const nowMuted = window.GameMusic?.toggle();
     btnMute.textContent = nowMuted ? '🔇' : '🔊';
+    if (volumeSlider) volumeSlider.style.opacity = nowMuted ? '0.35' : '1';
+  });
+}
+
+if (volumeSlider) {
+  volumeSlider.addEventListener('input', () => {
+    const v = volumeSlider.value / 100;
+    window.GameMusic?.start();
+    window.GameMusic?.setVolume(v);
+    // If they turn up the slider while muted, unmute
+    if (v > 0 && window.GameMusic?.muted) {
+      window.GameMusic.toggle();
+      if (btnMute) { btnMute.textContent = '🔊'; volumeSlider.style.opacity = '1'; }
+    }
+    if (btnMute) btnMute.textContent = v === 0 ? '🔇' : '🔊';
   });
 }
 

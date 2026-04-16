@@ -183,12 +183,18 @@ body > canvas {
 #btn-lobby:hover  { background: rgba(79, 240, 255, 0.15); }
 #btn-lobby:active { transform: scale(0.95); }
 
-/* Mute button — sits below lobby button */
-#btn-mute {
+/* Music controls row — sits below lobby button */
+#music-ctrl {
   position: fixed;
   top: 3.2rem;
   right: 1rem;
   z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+#btn-mute {
   padding: 0.45rem 0.7rem;
   border-radius: 8px;
   border: 1px solid rgba(198,75,255,0.45);
@@ -199,9 +205,47 @@ body > canvas {
   backdrop-filter: blur(4px);
   transition: background 0.15s, transform 0.1s;
   line-height: 1;
+  flex-shrink: 0;
 }
 #btn-mute:hover  { background: rgba(198,75,255,0.15); }
 #btn-mute:active { transform: scale(0.95); }
+
+#volume-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 90px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(198,75,255,0.35);
+  outline: none;
+  cursor: pointer;
+}
+#volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+#volume-slider::-webkit-slider-thumb:hover { transform: scale(1.2); }
+#volume-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
+  border: none;
+  cursor: pointer;
+}
+#volume-slider::-moz-range-track {
+  background: rgba(198,75,255,0.35);
+  height: 4px;
+  border-radius: 2px;
+}
 
 /* Rules section */
 #rules {
