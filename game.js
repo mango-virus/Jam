@@ -314,8 +314,38 @@ function rebuildArena(seed) {
     occupied.push({ x, z, r: baseW/2 });
   }
 
+  function spawnToppledColumn(x, z) {
+    const hue = rand();
+    const ph  = 2.5 + rand() * 3.5; // length of the column
+    const pw  = 0.5 + rand() * 0.55; // diameter
+    const r   = pw / 2;
+    const angle = rand() * Math.PI; // which direction it's fallen
+
+    // Visual: cylinder lying on its side
+    // Three.js Euler XYZ: matrix = Rx * Ry * Rz
+    // Setting rotation.z = PI/2 topples it along X, then rotation.y = angle spins direction.
+    const m = new THREE.Mesh(
+      new THREE.CylinderGeometry(r, r, ph, 8),
+      mat(hue, 0.18));
+    m.position.set(x, r, z);     // center sits at radius height off the ground
+    m.rotation.y = angle;
+    m.rotation.z = Math.PI / 2;  // topple it
+    m.castShadow = true; m.receiveShadow = true;
+    scene.add(m); pillarMeshes.push(m);
+
+    // Collision: AABB that accounts for the Y rotation of the column axis.
+    // After rotation, the column axis direction in world XZ is (cos angle, -sin angle).
+    // AABB half-extents = projection of column onto world axes.
+    const ca = Math.abs(Math.cos(angle)), sa = Math.abs(Math.sin(angle));
+    const hw = ph / 2 * ca + r * sa;
+    const hd = ph / 2 * sa + r * ca;
+    addEP(x, z, hw, hd, pw); // topY = pw (full diameter = highest walkable point)
+
+    occupied.push({ x, z, r: ph / 2 });
+  }
+
   // ── Place structures ─────────────────────────────────────────────
-  const TYPES = ['pillar','pillar','watchtower','arch','staircase','lowwall','ruins','obelisk','crystal','monument'];
+  const TYPES = ['pillar','pillar','watchtower','arch','staircase','lowwall','ruins','obelisk','crystal','monument','toppled','toppled'];
   const count = 9 + Math.floor(rand() * 5); // 9–13 structures
 
   for (let i = 0; i < count; i++) {
@@ -334,6 +364,7 @@ function rebuildArena(seed) {
     else if (type === 'obelisk')    spawnObelisk(x, z);
     else if (type === 'crystal')    spawnCrystalCluster(x, z);
     else if (type === 'monument')   spawnMonument(x, z);
+    else if (type === 'toppled')    spawnToppledColumn(x, z);
   }
 
   // --- Randomise tile base colour ---
