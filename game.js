@@ -114,8 +114,8 @@ const pillarData        = []; // { x, z, r, topY }  – collision data
 const pillarMeshes      = []; // THREE.Mesh refs for teardown
 const pillarLights      = []; // THREE.PointLight refs for teardown
 
-const CLIMB_SPEED   = 2.5;   // m/s upward when pressing into a climbable object
-const MAX_CLIMBABLE = 2.2;   // max height above current Y that can be climbed
+const CLIMB_SPEED   = 7.0;   // m/s upward when pressing into a climbable object
+const MAX_CLIMBABLE = 10.0;  // max height above current Y that can be climbed
 
 const elevatedPlatforms = []; // { x, z, hw, hd, topY } – collision data
 const epMeshes          = []; // THREE.Mesh refs for teardown
