@@ -70,7 +70,6 @@ platform.position.y = -2;
 platform.receiveShadow = true;
 platform.castShadow = true;
 scene.add(platform);
-scene.add(new THREE.GridHelper(PLATFORM_HALF * 2, 24, 0x2a085a, 0x1e0545));
 
 // Distant ground far below
 const farGround = new THREE.Mesh(
