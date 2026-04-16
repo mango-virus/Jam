@@ -171,6 +171,21 @@ function makeCharacter(hexColor) {
   leftArmMesh.position.y = -0.275; // hang down from shoulder pivot
   leftArmMesh.castShadow = true;
   leftArm.add(leftArmMesh);
+
+  // Shield (shown in left hand when equipped)
+  const shieldEquip = new THREE.Mesh(
+    new THREE.BoxGeometry(0.38, 0.42, 0.06),
+    new THREE.MeshStandardMaterial({ color: 0x2244cc, roughness: 0.5, metalness: 0.3 })
+  );
+  shieldEquip.position.set(0, -0.28, 0.16);
+  shieldEquip.visible = false;
+  const shieldEmblem = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.07),
+    new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.8, roughness: 0.2 }));
+  shieldEmblem.position.set(0, -0.28, 0.2);
+  shieldEmblem.visible = false;
+  leftArm.add(shieldEquip);
+  leftArm.add(shieldEmblem);
+
   group.add(leftArm);
 
   const rightArm = new THREE.Group();
@@ -180,6 +195,25 @@ function makeCharacter(hexColor) {
   rightArmMesh.position.y = -0.275;
   rightArmMesh.castShadow = true;
   rightArm.add(rightArmMesh);
+
+  // Sword (shown in right hand when equipped)
+  const swordGroup = new THREE.Group();
+  swordGroup.position.set(0, -0.55, 0.12);
+  swordGroup.rotation.x = -Math.PI / 2;
+  swordGroup.visible = false;
+  const sBlade = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.5, 0.05),
+    new THREE.MeshStandardMaterial({ color: 0xd0d8e8, metalness: 0.9, roughness: 0.15 }));
+  sBlade.position.y = 0.27;
+  swordGroup.add(sBlade);
+  const sGuard = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.04, 0.06),
+    new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.8, roughness: 0.2 }));
+  swordGroup.add(sGuard);
+  const sHandle = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.18, 0.04),
+    new THREE.MeshStandardMaterial({ color: 0x5c3a1e, roughness: 0.8 }));
+  sHandle.position.y = -0.1;
+  swordGroup.add(sHandle);
+  rightArm.add(swordGroup);
+
   group.add(rightArm);
 
   // Legs
@@ -228,14 +262,14 @@ function makeCharacter(hexColor) {
   charGlow.position.y = 0.8;
   group.add(charGlow);
 
-  return { group, leftArm, rightArm, leftLeg, rightLeg };
+  return { group, leftArm, rightArm, leftLeg, rightLeg, swordGroup, shieldEquip, shieldEmblem };
 }
 
 // ------------------------------------------------------------------
 // Local player
 // ------------------------------------------------------------------
 
-const { group: playerGroup, leftArm, rightArm, leftLeg, rightLeg } = makeCharacter('#' + incoming.color);
+const { group: playerGroup, leftArm, rightArm, leftLeg, rightLeg, swordGroup: playerSword, shieldEquip: playerShield, shieldEmblem: playerShieldEmblem } = makeCharacter('#' + incoming.color);
 scene.add(playerGroup);
 
 // ------------------------------------------------------------------
@@ -273,6 +307,128 @@ if (incoming.ref) {
   returnPortal.group.position.set(-20, 0, 0);
   returnPortal.group.rotation.y = Math.PI / 2;
   scene.add(returnPortal.group);
+}
+
+// ------------------------------------------------------------------
+// Chest + item system
+// ------------------------------------------------------------------
+
+const MAX_CHESTS       = 2;
+const CHEST_INTERVAL   = 18000; // ms between spawn attempts
+const CHEST_OPEN_DELAY = 1.6;   // seconds before chest disappears after opening
+const ITEM_PICKUP_R    = 1.4;   // metres to pick up item
+const CHEST_INTERACT_R = 1.8;
+const SWORD_KNOCKBACK  = 38;
+
+let chestTimer = Date.now() + 5000; // first chest after 5s
+const activeChests = []; // { group, lidPivot, x, z, opened, openTimer }
+const groundItems  = []; // { group, type, x, z }
+let equippedItem   = null; // 'sword' | 'shield' | null
+let isBlocking     = false;
+
+// Safe random positions on platform (away from edges and pillars)
+function randomChestPos() {
+  const margin = 3;
+  for (let tries = 0; tries < 30; tries++) {
+    const x = (Math.random() * 2 - 1) * (PLATFORM_HALF - margin);
+    const z = (Math.random() * 2 - 1) * (PLATFORM_HALF - margin);
+    // avoid pillars
+    const tooClose = pillarData.some(p => Math.hypot(x - p.x, z - p.z) < 2.5);
+    // avoid existing chests
+    const overlap  = activeChests.some(c => Math.hypot(x - c.x, z - c.z) < 3);
+    if (!tooClose && !overlap) return { x, z };
+  }
+  return { x: 0, z: 8 }; // fallback
+}
+
+function makeChest(x, z) {
+  const group = new THREE.Group();
+  group.position.set(x, 0, z);
+
+  const woodMat   = new THREE.MeshStandardMaterial({ color: 0x7a4010, roughness: 0.85 });
+  const metalMat  = new THREE.MeshStandardMaterial({ color: 0xd4a017, metalness: 0.8, roughness: 0.3 });
+
+  const base = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.45, 0.52), woodMat);
+  base.position.y = 0.225;
+  base.castShadow = true;
+  group.add(base);
+
+  // Metal bands
+  for (const bz of [-0.22, 0.22]) {
+    const band = new THREE.Mesh(new THREE.BoxGeometry(0.74, 0.06, 0.04), metalMat);
+    band.position.set(0, 0.225, bz);
+    group.add(band);
+  }
+
+  // Lid pivot at top-back of base
+  const lidPivot = new THREE.Group();
+  lidPivot.position.set(0, 0.45, -0.24);
+  group.add(lidPivot);
+
+  const lid = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.22, 0.52), woodMat);
+  lid.position.set(0, 0.11, 0.24);
+  lid.castShadow = true;
+  lidPivot.add(lid);
+
+  // Clasp
+  const clasp = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.08, 0.06), metalMat);
+  clasp.position.set(0, 0.45, 0.27);
+  group.add(clasp);
+
+  // Glow
+  const glow = new THREE.PointLight(0xffd700, 0.6, 5);
+  glow.position.set(0, 1, 0);
+  group.add(glow);
+
+  scene.add(group);
+  return { group, lidPivot, glow, x, z, opened: false, openTimer: 0 };
+}
+
+function makeGroundItem(type, x, z) {
+  const g = new THREE.Group();
+  if (type === 'sword') {
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.55, 0.06),
+      new THREE.MeshStandardMaterial({ color: 0xd0d8e8, metalness: 0.9, roughness: 0.15 }));
+    blade.position.y = 0.35;
+    g.add(blade);
+    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.05, 0.06),
+      new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.8, roughness: 0.2 }));
+    guard.position.y = 0.1;
+    g.add(guard);
+    const handle = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.2, 0.05),
+      new THREE.MeshStandardMaterial({ color: 0x5c3a1e, roughness: 0.8 }));
+    handle.position.y = -0.05;
+    g.add(handle);
+  } else { // shield
+    const face = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.48, 0.07),
+      new THREE.MeshStandardMaterial({ color: 0x2244cc, roughness: 0.5, metalness: 0.3 }));
+    face.position.y = 0.28;
+    g.add(face);
+    const emblem = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.08),
+      new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.8 }));
+    emblem.position.y = 0.28;
+    g.add(emblem);
+  }
+  g.position.set(x, 0.1, z);
+  scene.add(g);
+  return { group: g, type, x, z };
+}
+
+function equipItem(type) {
+  equippedItem = type;
+  playerSword.visible = (type === 'sword');
+  playerShield.visible = (type === 'shield');
+  playerShieldEmblem.visible = (type === 'shield');
+}
+
+function dropItem() {
+  if (!equippedItem) return;
+  const px = playerGroup.position.x, pz = playerGroup.position.z;
+  groundItems.push(makeGroundItem(equippedItem, px + Math.sin(playerGroup.rotation.y + Math.PI) * 1.2, pz + Math.cos(playerGroup.rotation.y + Math.PI) * 1.2));
+  equippedItem = null;
+  playerSword.visible = false;
+  playerShield.visible = false;
+  playerShieldEmblem.visible = false;
 }
 
 // Canvas-texture sprite labels (portals + peer names)
@@ -332,6 +488,7 @@ function broadcastSelf() {
     color:    incoming.color,
     username: incoming.username,
     moving:   isMoving,
+    equipped: equippedItem,
   });
 }
 
@@ -364,7 +521,14 @@ function addPeer(id, data) {
   char.group.position.set(data.x ?? 0, 0, data.z ?? 0);
   char.group.rotation.y = data.rotY ?? 0;
   scene.add(char.group);
-  peers.set(id, { ...char, tx: data.x ?? 0, ty: data.y ?? 0, tz: data.z ?? 0, rotY: data.rotY ?? 0, moving: false, swing: 0, username: data.username, redrawLabel });
+  peers.set(id, { ...char, tx: data.x ?? 0, ty: data.y ?? 0, tz: data.z ?? 0, rotY: data.rotY ?? 0, moving: false, swing: 0, username: data.username, redrawLabel, equipped: data.equipped ?? null });
+}
+
+function applyPeerEquip(peer, equipped) {
+  peer.equipped = equipped;
+  if (peer.swordGroup)   peer.swordGroup.visible   = (equipped === 'sword');
+  if (peer.shieldEquip)  peer.shieldEquip.visible   = (equipped === 'shield');
+  if (peer.shieldEmblem) peer.shieldEmblem.visible  = (equipped === 'shield');
 }
 
 function removePeer(id) {
@@ -404,9 +568,11 @@ async function setupMultiplayer() {
     sendState = send;
     const [sPunch, onPunch] = room.makeAction('punch');
     sendPunch = sPunch;
-    onPunch(({ kx, kz }) => {
-      velX = kx * KNOCKBACK_H;
-      velZ = kz * KNOCKBACK_H;
+    onPunch(({ kx, kz, force }) => {
+      if (isBlocking && equippedItem === 'shield') return; // shield block
+      const kb = force ?? KNOCKBACK_H;
+      velX = kx * kb;
+      velZ = kz * kb;
       velY = Math.max(velY, KNOCKBACK_UP);
       onGround = false;
     });
@@ -428,6 +594,7 @@ async function setupMultiplayer() {
           peer.username = data.username;
           peer.redrawLabel(data.username || '?');
         }
+        if (data.equipped !== peer.equipped) applyPeerEquip(peer, data.equipped ?? null);
       }
       refreshPeerCount();
     });
@@ -461,7 +628,7 @@ document.addEventListener('pointerlockchange', () => {
   isLocked = document.pointerLockElement === renderer.domElement;
   const hint = document.getElementById('hint');
   if (hint) hint.textContent = isLocked
-    ? 'WASD to move  ·  Shift to sprint  ·  Space to jump  ·  walk into a portal to travel'
+    ? 'WASD · Shift sprint · Space jump · LMB punch/sword · RMB shield · E open/equip · Z drop'
     : 'Click to capture mouse';
 });
 
@@ -473,12 +640,52 @@ document.addEventListener('mousemove', e => {
 });
 
 document.addEventListener('mousedown', e => {
-  if (isLocked && e.button === 0) doPunch();
+  if (!isLocked) return;
+  if (e.button === 0) doPunch();
+  if (e.button === 2) isBlocking = true;
+});
+document.addEventListener('mouseup', e => {
+  if (e.button === 2) isBlocking = false;
 });
 
 document.addEventListener('keydown', e => {
   keys[e.key.toLowerCase()] = true;
   if (e.key === ' ') e.preventDefault();
+
+  // E — open chest / equip item
+  if (e.key === 'e' || e.key === 'E') {
+    const px = playerGroup.position.x, pz = playerGroup.position.z;
+    // Try to open a chest first
+    let interacted = false;
+    for (let i = activeChests.length - 1; i >= 0; i--) {
+      const ch = activeChests[i];
+      if (!ch.opened && Math.hypot(px - ch.x, pz - ch.z) < CHEST_INTERACT_R) {
+        ch.opened = true;
+        ch.openTimer = CHEST_OPEN_DELAY;
+        // drop an item at chest position
+        const type = Math.random() < 0.5 ? 'sword' : 'shield';
+        groundItems.push(makeGroundItem(type, ch.x + (Math.random() - 0.5) * 0.5, ch.z + (Math.random() - 0.5) * 0.5));
+        interacted = true;
+        break;
+      }
+    }
+    // Otherwise pick up a nearby ground item
+    if (!interacted) {
+      for (let i = groundItems.length - 1; i >= 0; i--) {
+        const it = groundItems[i];
+        if (Math.hypot(px - it.x, pz - it.z) < ITEM_PICKUP_R) {
+          if (equippedItem) dropItem(); // drop current first
+          scene.remove(it.group);
+          groundItems.splice(i, 1);
+          equipItem(it.type);
+          break;
+        }
+      }
+    }
+  }
+
+  // Z — drop equipped item
+  if (e.key === 'z' || e.key === 'Z') dropItem();
 });
 document.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
 
@@ -547,7 +754,6 @@ function doPunch() {
   if (punchTimer > 0 || isDead) return;
   punchTimer = 0.35;
 
-  // Find the nearest peer within punch range and knock them back
   const px = playerGroup.position.x;
   const py = playerGroup.position.y;
   const pz = playerGroup.position.z;
@@ -563,7 +769,8 @@ function doPunch() {
 
   if (nearest && sendPunch) {
     const { id, dx, dz, dist } = nearest;
-    sendPunch({ kx: dx / dist, kz: dz / dist }, id);
+    const force = equippedItem === 'sword' ? SWORD_KNOCKBACK : KNOCKBACK_H;
+    sendPunch({ kx: dx / dist, kz: dz / dist, force }, id);
   }
 }
 const CAM_DIST   = 5;
@@ -697,6 +904,37 @@ function loop(now) {
   );
   const lookY = playerGroup.position.y + 1 - Math.sin(pitch) * CAM_DIST * 0.5;
   camera.lookAt(playerGroup.position.x, lookY, playerGroup.position.z);
+
+  // --- Chest spawning + open animation ---
+  if (!isDead && Date.now() >= chestTimer && activeChests.length < MAX_CHESTS) {
+    chestTimer = Date.now() + CHEST_INTERVAL;
+    const { x, z } = randomChestPos();
+    activeChests.push(makeChest(x, z));
+  }
+
+  for (let i = activeChests.length - 1; i >= 0; i--) {
+    const ch = activeChests[i];
+    if (ch.opened) {
+      // Animate lid opening
+      const targetRot = -Math.PI * 0.75;
+      ch.lidPivot.rotation.x += (targetRot - ch.lidPivot.rotation.x) * Math.min(1, dt * 8);
+      ch.glow.intensity = Math.max(0, ch.glow.intensity - dt * 2);
+      ch.openTimer -= dt;
+      if (ch.openTimer <= 0) {
+        scene.remove(ch.group);
+        activeChests.splice(i, 1);
+      }
+    } else {
+      // Gentle idle bob
+      ch.group.position.y = Math.sin(time * 1.8 + ch.x) * 0.04;
+    }
+  }
+
+  // --- Ground item bobbing ---
+  for (const it of groundItems) {
+    it.group.position.y = 0.1 + Math.sin(time * 2.5 + it.x) * 0.08;
+    it.group.rotation.y += dt * 1.2;
+  }
 
   // --- Animate portals ---
   const pulse = 0.7 + 0.3 * Math.sin(time * 3);
