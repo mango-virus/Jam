@@ -1847,17 +1847,32 @@ function loop(now) {
     rightArm.rotation.x = swing * 0.6;
   }
 
-  // --- Third-person camera ---
-  const camBack = Math.cos(pitch) * CAM_DIST;
-  const camUp   = Math.sin(pitch) * CAM_DIST;
-  _offset.set(0, 0, camBack).applyEuler(_euler);
-  camera.position.set(
-    playerGroup.position.x + _offset.x,
-    playerGroup.position.y + CAM_HEIGHT + camUp,
-    playerGroup.position.z + _offset.z
-  );
-  const lookY = playerGroup.position.y + 1 - Math.sin(pitch) * CAM_DIST * 0.5;
-  camera.lookAt(playerGroup.position.x, lookY, playerGroup.position.z);
+  // --- Camera ---
+  if (gameState === 'playing') {
+    // Third-person follow camera
+    const camBack = Math.cos(pitch) * CAM_DIST;
+    const camUp   = Math.sin(pitch) * CAM_DIST;
+    _offset.set(0, 0, camBack).applyEuler(_euler);
+    camera.position.set(
+      playerGroup.position.x + _offset.x,
+      playerGroup.position.y + CAM_HEIGHT + camUp,
+      playerGroup.position.z + _offset.z
+    );
+    const lookY = playerGroup.position.y + 1 - Math.sin(pitch) * CAM_DIST * 0.5;
+    camera.lookAt(playerGroup.position.x, lookY, playerGroup.position.z);
+  } else {
+    // Cinematic orbit camera for lobby and game over screens
+    const orbitRadius = 52;
+    const orbitHeight = 28;
+    const orbitSpeed  = 0.18; // radians per second
+    const orbitAngle  = time * orbitSpeed;
+    camera.position.set(
+      Math.sin(orbitAngle) * orbitRadius,
+      orbitHeight,
+      Math.cos(orbitAngle) * orbitRadius
+    );
+    camera.lookAt(0, 2, 0);
+  }
 
   // --- Item spawning ---
   if (gameState === 'playing' && Date.now() >= itemTimer && groundItems.length < MAX_ITEMS) {
