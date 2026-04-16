@@ -821,7 +821,7 @@ function makeCharacter(hexColor) {
   const thrusterMat = new THREE.MeshStandardMaterial({ color: 0xff6600, emissive: new THREE.Color(0xff3300), emissiveIntensity: 0.6, roughness: 0.3 });
   // Left boot
   const leftBoot = new THREE.Group();
-  leftBoot.position.set(-0.13, -0.10, 0);
+  leftBoot.position.set(-0.13, 0.05, 0);
   const lSole = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.08, 0.28), bootsMat);
   lSole.position.y = 0;
   leftBoot.add(lSole);
@@ -835,7 +835,7 @@ function makeCharacter(hexColor) {
   bootsGroup.add(leftBoot);
   // Right boot
   const rightBoot = new THREE.Group();
-  rightBoot.position.set(0.13, -0.10, 0);
+  rightBoot.position.set(0.13, 0.05, 0);
   const rSole = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.08, 0.28), bootsMat);
   rSole.position.y = 0;
   rightBoot.add(rSole);
@@ -1419,7 +1419,22 @@ document.addEventListener('mouseup', e => {
 
 document.addEventListener('keydown', e => {
   keys[e.key.toLowerCase()] = true;
-  if (e.key === ' ') e.preventDefault();
+  if (e.key === ' ') {
+    e.preventDefault();
+    // Jump — handled here (once per keypress) so double-jump can't auto-trigger
+    if (!isDead && !isGhost) {
+      if (onGround) {
+        velY = JUMP_FORCE;
+        onGround = false;
+        hasDoubleJumped = false;
+      } else if (hasBoots && !hasDoubleJumped && !hasFallenOff) {
+        velY = JUMP_FORCE * 0.9;
+        hasDoubleJumped = true;
+        bootsDurability--;
+        if (bootsDurability <= 0) breakBoots(); else updateDurabilityHUD();
+      }
+    }
+  }
 
   // E — pick up nearby item
   if (e.key === 'e' || e.key === 'E') {
@@ -2062,19 +2077,7 @@ function loop(now) {
     }
   }
 
-  // Jump / double jump
-  if (keys[' '] && !isDead) {
-    if (onGround) {
-      velY = JUMP_FORCE;
-      onGround = false;
-      hasDoubleJumped = false;
-    } else if (hasBoots && !hasDoubleJumped && !hasFallenOff) {
-      velY = JUMP_FORCE * 0.9;
-      hasDoubleJumped = true;
-      bootsDurability--;
-      if (bootsDurability <= 0) breakBoots(); else updateDurabilityHUD();
-    }
-  }
+  // Jump is handled in keydown listener (once per press)
 
   // Gravity
   if (!onGround) velY -= GRAVITY * dt;
