@@ -245,20 +245,75 @@ function makeCharacter(hexColor) {
     group.add(pupil);
   }
 
-  // Hat
-  const hatMat = new THREE.MeshStandardMaterial({ color: 0x1a0030, roughness: 0.5, metalness: 0.1 });
-  const hatBandMat = new THREE.MeshStandardMaterial({ color: 0xc64bff, emissive: 0x4a0088, roughness: 0.3 });
-  const hatBrim = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.05, 16), hatMat);
-  hatBrim.position.y = 1.44;
-  hatBrim.castShadow = true;
-  group.add(hatBrim);
-  const hatCrown = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.20, 0.42, 16), hatMat);
-  hatCrown.position.y = 1.69;
-  hatCrown.castShadow = true;
-  group.add(hatCrown);
-  const hatRibbon = new THREE.Mesh(new THREE.CylinderGeometry(0.205, 0.205, 0.07, 16), hatBandMat);
-  hatRibbon.position.y = 1.49;
-  group.add(hatRibbon);
+  // Hat — random style each spawn
+  const hatStyle = Math.floor(Math.random() * 6);
+  const hatColor  = [0x1a0030, 0x8b1a00, 0x0a3a0a, 0x1a1a1a, 0x7a3800, 0x001a3a][hatStyle];
+  const hatAccent = [0xc64bff, 0xff4f4f, 0x4fff88, 0xffcc00, 0xff8c00, 0x4fddff][hatStyle];
+  const hMat  = new THREE.MeshStandardMaterial({ color: hatColor, roughness: 0.5, metalness: 0.1 });
+  const hAccM = new THREE.MeshStandardMaterial({ color: hatAccent, emissive: new THREE.Color(hatAccent).multiplyScalar(0.4), roughness: 0.3 });
+
+  if (hatStyle === 0) {
+    // Tall witch / top hat
+    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.05, 16), hMat);
+    brim.position.y = 1.44; brim.castShadow = true; group.add(brim);
+    const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.20, 0.42, 16), hMat);
+    crown.position.y = 1.69; crown.castShadow = true; group.add(crown);
+    const ribbon = new THREE.Mesh(new THREE.CylinderGeometry(0.205, 0.205, 0.07, 16), hAccM);
+    ribbon.position.y = 1.49; group.add(ribbon);
+
+  } else if (hatStyle === 1) {
+    // Pirate tricorn
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.30, 0.10, 3), hMat);
+    base.position.y = 1.46; base.castShadow = true; group.add(base);
+    const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.22, 0.30, 3), hMat);
+    crown.position.y = 1.66; crown.castShadow = true; group.add(crown);
+    const skull = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.10, 0.04), hAccM);
+    skull.position.set(0, 1.72, 0.19); group.add(skull);
+
+  } else if (hatStyle === 2) {
+    // Flat cap / beret
+    const beret = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.22, 0.10, 16), hMat);
+    beret.position.y = 1.47; beret.castShadow = true; group.add(beret);
+    const puff = new THREE.Mesh(new THREE.SphereGeometry(0.20, 10, 6), hMat);
+    puff.scale.y = 0.55; puff.position.y = 1.54; group.add(puff);
+    const button = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.04, 8), hAccM);
+    button.position.y = 1.67; group.add(button);
+
+  } else if (hatStyle === 3) {
+    // Crown
+    const ring = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.18, 16, 1, true), hAccM);
+    ring.position.y = 1.51; group.add(ring);
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2;
+      const spike = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.18, 6), hAccM);
+      spike.position.set(Math.sin(a) * 0.20, 1.69, Math.cos(a) * 0.20);
+      group.add(spike);
+    }
+    const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.05), new THREE.MeshStandardMaterial({ color: 0xff2255, emissive: 0x880022, metalness: 1, roughness: 0 }));
+    gem.position.y = 1.52; group.add(gem);
+
+  } else if (hatStyle === 4) {
+    // Cowboy hat
+    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.38, 0.04, 16), hMat);
+    brim.position.y = 1.44; brim.castShadow = true; group.add(brim);
+    const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.24, 0.28, 16), hMat);
+    crown.position.y = 1.62; crown.castShadow = true; group.add(crown);
+    const dent = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 5), hMat);
+    dent.scale.y = 0.5; dent.position.y = 1.74; group.add(dent);
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.245, 0.245, 0.06, 16), hAccM);
+    band.position.y = 1.49; group.add(band);
+
+  } else {
+    // Sailor / captain's cap
+    const peak = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.04, 0.20), hMat);
+    peak.position.set(0, 1.44, 0.14); peak.castShadow = true; group.add(peak);
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.23, 0.16, 16), hMat);
+    body.position.y = 1.54; group.add(body);
+    const top = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.23, 0.04, 16), hAccM);
+    top.position.y = 1.63; group.add(top);
+    const badge = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.08, 0.03), hAccM);
+    badge.position.set(0, 1.55, 0.24); group.add(badge);
+  }
 
   // Per-character glow
   const charGlow = new THREE.PointLight(color, 1.5, 3);
