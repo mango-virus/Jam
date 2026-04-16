@@ -179,7 +179,7 @@ function makeCharacter(hexColor) {
     new THREE.BoxGeometry(0.38, 0.42, 0.06),
     new THREE.MeshStandardMaterial({ color: 0x2244cc, roughness: 0.5, metalness: 0.3 })
   );
-  shieldEquip.position.set(0, -0.68, 0);
+  shieldEquip.position.set(0, -0.56, 0);
   shieldEquip.rotation.x = Math.PI / 2;
   shieldEquip.visible = false;
   const shieldEmblem = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.07),
