@@ -228,14 +228,20 @@ function makeCharacter(hexColor) {
   const group = new THREE.Group();
   const color = new THREE.Color(hexColor);
 
+  // ------------------------------------------------------------------
+  // Normal body — everything visible when alive; hidden in ghost mode
+  // ------------------------------------------------------------------
+  const normalBody = new THREE.Group();
+  group.add(normalBody);
+
   // Torso — shortened so legs don't clip through the bottom
   const torso = new THREE.Mesh(
     new THREE.BoxGeometry(0.5, 0.55, 0.3),
     new THREE.MeshStandardMaterial({ color, emissive: color.clone().multiplyScalar(0.25), roughness: 0.4 })
   );
-  torso.position.y = 0.675; // bottom at 0.40, top at 0.95
+  torso.position.y = 0.675;
   torso.castShadow = true;
-  group.add(torso);
+  normalBody.add(torso);
 
   // Head
   const head = new THREE.Mesh(
@@ -244,7 +250,7 @@ function makeCharacter(hexColor) {
   );
   head.position.y = 1.22;
   head.castShadow = true;
-  group.add(head);
+  normalBody.add(head);
 
   // Arms — pivot group sits at the shoulder so the arm hangs down from it
   const armMat = new THREE.MeshStandardMaterial({ color, emissive: color.clone().multiplyScalar(0.25), roughness: 0.4 });
@@ -254,13 +260,11 @@ function makeCharacter(hexColor) {
   leftArm.position.set(-0.34, 0.92, 0);
   leftArm.rotation.z = 0.15;
   const leftArmMesh = new THREE.Mesh(armGeo, armMat);
-  leftArmMesh.position.y = -0.275; // hang down from shoulder pivot
+  leftArmMesh.position.y = -0.275;
   leftArmMesh.castShadow = true;
   leftArm.add(leftArmMesh);
 
   // Shield (shown in left hand when equipped)
-  // rotation.x = PI/2 so the face (local Z) aligns with arm's local Y,
-  // which maps to world +Z (forward) when the arm is raised to block position.
   const shieldEquip = new THREE.Mesh(
     new THREE.BoxGeometry(0.38, 0.42, 0.06),
     new THREE.MeshStandardMaterial({ color: 0x2244cc, roughness: 0.5, metalness: 0.3 })
@@ -270,12 +274,11 @@ function makeCharacter(hexColor) {
   shieldEquip.visible = false;
   const shieldEmblem = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.07),
     new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.8, roughness: 0.2 }));
-  shieldEmblem.position.set(0, 0, 0.05); // slightly proud of shield face
+  shieldEmblem.position.set(0, 0, 0.05);
   shieldEmblem.visible = false;
-  shieldEquip.add(shieldEmblem); // child of shield so they move together
+  shieldEquip.add(shieldEmblem);
   leftArm.add(shieldEquip);
-
-  group.add(leftArm);
+  normalBody.add(leftArm);
 
   const rightArm = new THREE.Group();
   rightArm.position.set(0.34, 0.92, 0);
@@ -302,8 +305,7 @@ function makeCharacter(hexColor) {
   sHandle.position.y = -0.1;
   swordGroup.add(sHandle);
   rightArm.add(swordGroup);
-
-  group.add(rightArm);
+  normalBody.add(rightArm);
 
   // Legs
   const legMat = new THREE.MeshStandardMaterial({ color: 0x1a0030, roughness: 0.6 });
@@ -311,11 +313,11 @@ function makeCharacter(hexColor) {
   const leftLeg = new THREE.Mesh(legGeo, legMat);
   leftLeg.position.set(-0.13, 0.15, 0);
   leftLeg.castShadow = true;
-  group.add(leftLeg);
+  normalBody.add(leftLeg);
   const rightLeg = new THREE.Mesh(legGeo, legMat);
   rightLeg.position.set(0.13, 0.15, 0);
   rightLeg.castShadow = true;
-  group.add(rightLeg);
+  normalBody.add(rightLeg);
 
   // Eyeballs
   const eyeWhiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
@@ -325,10 +327,10 @@ function makeCharacter(hexColor) {
   for (const ex of [-0.09, 0.09]) {
     const white = new THREE.Mesh(ewGeo, eyeWhiteMat);
     white.position.set(ex, 1.25, 0.175);
-    group.add(white);
+    normalBody.add(white);
     const pupil = new THREE.Mesh(pupilGeo, eyePupilMat);
     pupil.position.set(ex, 1.25, 0.21);
-    group.add(pupil);
+    normalBody.add(pupil);
   }
 
   // Hat — random style each spawn
@@ -339,119 +341,163 @@ function makeCharacter(hexColor) {
   const hAccM = new THREE.MeshStandardMaterial({ color: hatAccent, emissive: new THREE.Color(hatAccent).multiplyScalar(0.4), roughness: 0.3 });
 
   if (hatStyle === 0) {
-    // Tall witch / top hat
     const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.05, 16), hMat);
-    brim.position.y = 1.44; brim.castShadow = true; group.add(brim);
+    brim.position.y = 1.44; brim.castShadow = true; normalBody.add(brim);
     const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.20, 0.42, 16), hMat);
-    crown.position.y = 1.69; crown.castShadow = true; group.add(crown);
+    crown.position.y = 1.69; crown.castShadow = true; normalBody.add(crown);
     const ribbon = new THREE.Mesh(new THREE.CylinderGeometry(0.205, 0.205, 0.07, 16), hAccM);
-    ribbon.position.y = 1.49; group.add(ribbon);
+    ribbon.position.y = 1.49; normalBody.add(ribbon);
 
   } else if (hatStyle === 1) {
-    // Pirate tricorn
     const base = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.30, 0.10, 3), hMat);
-    base.position.y = 1.46; base.castShadow = true; group.add(base);
+    base.position.y = 1.46; base.castShadow = true; normalBody.add(base);
     const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.22, 0.30, 3), hMat);
-    crown.position.y = 1.66; crown.castShadow = true; group.add(crown);
+    crown.position.y = 1.66; crown.castShadow = true; normalBody.add(crown);
     const skull = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.10, 0.04), hAccM);
-    skull.position.set(0, 1.72, 0.19); group.add(skull);
+    skull.position.set(0, 1.72, 0.19); normalBody.add(skull);
 
   } else if (hatStyle === 2) {
-    // Flat cap / beret
     const beret = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.22, 0.10, 16), hMat);
-    beret.position.y = 1.47; beret.castShadow = true; group.add(beret);
+    beret.position.y = 1.47; beret.castShadow = true; normalBody.add(beret);
     const puff = new THREE.Mesh(new THREE.SphereGeometry(0.20, 10, 6), hMat);
-    puff.scale.y = 0.55; puff.position.y = 1.54; group.add(puff);
+    puff.scale.y = 0.55; puff.position.y = 1.54; normalBody.add(puff);
     const button = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.04, 8), hAccM);
-    button.position.y = 1.67; group.add(button);
+    button.position.y = 1.67; normalBody.add(button);
 
   } else if (hatStyle === 3) {
-    // Crown
     const ring = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.18, 16, 1, true), hAccM);
-    ring.position.y = 1.51; group.add(ring);
+    ring.position.y = 1.51; normalBody.add(ring);
     for (let i = 0; i < 5; i++) {
       const a = (i / 5) * Math.PI * 2;
       const spike = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.18, 6), hAccM);
       spike.position.set(Math.sin(a) * 0.20, 1.69, Math.cos(a) * 0.20);
-      group.add(spike);
+      normalBody.add(spike);
     }
     const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.05), new THREE.MeshStandardMaterial({ color: 0xff2255, emissive: 0x880022, metalness: 1, roughness: 0 }));
-    gem.position.y = 1.52; group.add(gem);
+    gem.position.y = 1.52; normalBody.add(gem);
 
   } else if (hatStyle === 4) {
-    // Cowboy hat
     const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.38, 0.04, 16), hMat);
-    brim.position.y = 1.44; brim.castShadow = true; group.add(brim);
+    brim.position.y = 1.44; brim.castShadow = true; normalBody.add(brim);
     const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.24, 0.28, 16), hMat);
-    crown.position.y = 1.62; crown.castShadow = true; group.add(crown);
+    crown.position.y = 1.62; crown.castShadow = true; normalBody.add(crown);
     const dent = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 5), hMat);
-    dent.scale.y = 0.5; dent.position.y = 1.74; group.add(dent);
+    dent.scale.y = 0.5; dent.position.y = 1.74; normalBody.add(dent);
     const band = new THREE.Mesh(new THREE.CylinderGeometry(0.245, 0.245, 0.06, 16), hAccM);
-    band.position.y = 1.49; group.add(band);
+    band.position.y = 1.49; normalBody.add(band);
 
   } else {
-    // Sailor / captain's cap
     const peak = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.04, 0.20), hMat);
-    peak.position.set(0, 1.44, 0.14); peak.castShadow = true; group.add(peak);
+    peak.position.set(0, 1.44, 0.14); peak.castShadow = true; normalBody.add(peak);
     const body = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.23, 0.16, 16), hMat);
-    body.position.y = 1.54; group.add(body);
+    body.position.y = 1.54; normalBody.add(body);
     const top = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.23, 0.04, 16), hAccM);
-    top.position.y = 1.63; group.add(top);
+    top.position.y = 1.63; normalBody.add(top);
     const badge = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.08, 0.03), hAccM);
-    badge.position.set(0, 1.55, 0.24); group.add(badge);
+    badge.position.set(0, 1.55, 0.24); normalBody.add(badge);
   }
-
-  // Ghost aura — large translucent blue sphere, hidden by default
-  const ghostAura = new THREE.Mesh(
-    new THREE.SphereGeometry(0.85, 12, 8),
-    new THREE.MeshStandardMaterial({ color: 0x44aaff, transparent: true, opacity: 0.18, side: THREE.FrontSide, depthWrite: false })
-  );
-  ghostAura.position.y = 0.7;
-  ghostAura.visible = false;
-  group.add(ghostAura);
 
   // Armor group — chest plate, shoulder pads, helmet visor, hidden by default
   const armorGroup = new THREE.Group();
   const armorMat = new THREE.MeshStandardMaterial({ color: 0xb8c8d8, metalness: 0.85, roughness: 0.18 });
-  // Chest plate
   const chestPlate = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.5, 0.12), armorMat);
   chestPlate.position.set(0, 0.68, 0.2);
   armorGroup.add(chestPlate);
-  // Left shoulder pad
   const lShoulder = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.18, 0.22), armorMat);
   lShoulder.position.set(-0.38, 0.95, 0);
   armorGroup.add(lShoulder);
-  // Right shoulder pad
   const rShoulder = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.18, 0.22), armorMat);
   rShoulder.position.set(0.38, 0.95, 0);
   armorGroup.add(rShoulder);
-  // Helmet visor
   const visor = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.14, 0.08),
     new THREE.MeshStandardMaterial({ color: 0x4488ff, metalness: 0.9, roughness: 0.1, transparent: true, opacity: 0.75 }));
   visor.position.set(0, 1.19, 0.21);
   armorGroup.add(visor);
-  // Helmet top
   const helmet = new THREE.Mesh(new THREE.BoxGeometry(0.40, 0.18, 0.40), armorMat);
   helmet.position.set(0, 1.32, 0);
   armorGroup.add(helmet);
   armorGroup.visible = false;
-  group.add(armorGroup);
+  normalBody.add(armorGroup);
 
-  // Per-character glow
+  // Per-character glow (alive)
   const charGlow = new THREE.PointLight(color, 1.5, 3);
   charGlow.position.y = 0.8;
-  group.add(charGlow);
+  normalBody.add(charGlow);
 
-  return { group, leftArm, rightArm, leftLeg, rightLeg, swordGroup, shieldEquip, shieldEmblem, armorGroup, ghostAura };
+  // ------------------------------------------------------------------
+  // Ghost body — shown instead of normalBody when dead
+  // ------------------------------------------------------------------
+  const ghostBody = new THREE.Group();
+  ghostBody.visible = false;
+  group.add(ghostBody);
+
+  const ghostMat = new THREE.MeshStandardMaterial({
+    color: 0xd8eeff,
+    emissive: new THREE.Color(0x66aaff).multiplyScalar(0.35),
+    roughness: 0.25,
+    transparent: true,
+    opacity: 0.92,
+  });
+
+  // Large rounded head blob
+  const gHead = new THREE.Mesh(new THREE.SphereGeometry(0.38, 14, 10), ghostMat);
+  gHead.scale.set(1, 1.18, 1);
+  gHead.position.y = 1.08;
+  ghostBody.add(gHead);
+
+  // Body cylinder — connects head to wispy bottom
+  const gTorso = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.30, 0.52, 14), ghostMat);
+  gTorso.position.y = 0.64;
+  ghostBody.add(gTorso);
+
+  // Wispy tail strands — inverted cones (wide at top, tip hangs down)
+  const tailDefs = [
+    { x: -0.13, z:  0.06, rx: -0.18, rz:  0.15 },
+    { x:  0.04, z: -0.16, rx:  0.14, rz: -0.10 },
+    { x:  0.14, z:  0.13, rx:  0.08, rz:  0.20 },
+  ];
+  for (const td of tailDefs) {
+    const tail = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.46, 8), ghostMat);
+    tail.rotation.x = Math.PI + td.rx; // flip so tip points down, then tilt
+    tail.rotation.z = td.rz;
+    tail.position.set(td.x, 0.30, td.z);
+    ghostBody.add(tail);
+  }
+
+  // Hollow glowing eyes
+  const ghostEyeMat = new THREE.MeshStandardMaterial({
+    color: 0x001122,
+    emissive: new THREE.Color(0x00ddff),
+    emissiveIntensity: 1.2,
+    roughness: 0.1,
+  });
+  for (const ex of [-0.14, 0.14]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.074, 10, 8), ghostEyeMat);
+    eye.position.set(ex, 1.16, 0.35);
+    ghostBody.add(eye);
+    // Small inner pupil — pure black void
+    const void_ = new THREE.Mesh(new THREE.SphereGeometry(0.038, 8, 6),
+      new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 1 }));
+    void_.position.set(ex, 1.16, 0.415);
+    ghostBody.add(void_);
+  }
+
+  // Ghost point light — soft cyan glow
+  const ghostGlow = new THREE.PointLight(0x88ddff, 2.8, 6);
+  ghostGlow.position.y = 0.9;
+  ghostBody.add(ghostGlow);
+
+  return { group, normalBody, ghostBody, leftArm, rightArm, leftLeg, rightLeg, swordGroup, shieldEquip, shieldEmblem, armorGroup };
 }
 
 // ------------------------------------------------------------------
 // Local player
 // ------------------------------------------------------------------
 
-const { group: playerGroup, leftArm, rightArm, leftLeg, rightLeg,
+const { group: playerGroup, normalBody: playerNormalBody, ghostBody: playerGhostBody,
+        leftArm, rightArm, leftLeg, rightLeg,
         swordGroup: playerSword, shieldEquip: playerShield, shieldEmblem: playerShieldEmblem,
-        armorGroup: playerArmorGroup, ghostAura: playerGhostAura } = makeCharacter('#' + incoming.color);
+        armorGroup: playerArmorGroup } = makeCharacter('#' + incoming.color);
 scene.add(playerGroup);
 
 // ------------------------------------------------------------------
@@ -780,18 +826,8 @@ function applyPeerEquip(peer, sword, shield) {
 
 function applyPeerGhostMode(peer, ghost) {
   peer.isGhost = ghost;
-  peer.group.traverse(obj => {
-    if (obj.isMesh && obj.material) {
-      if (ghost) {
-        obj.material.transparent = true;
-        obj.material.opacity = 0.38;
-      } else {
-        obj.material.transparent = false;
-        obj.material.opacity = 1;
-      }
-    }
-  });
-  if (peer.ghostAura) peer.ghostAura.visible = ghost;
+  if (peer.normalBody) peer.normalBody.visible = !ghost;
+  if (peer.ghostBody)  peer.ghostBody.visible  =  ghost;
 }
 
 function removePeer(id) {
@@ -1109,14 +1145,9 @@ function enterGhostMode() {
   hasArmor = false;
   localStorage.removeItem('arenaHasArmor');
   playerArmorGroup.visible = false;
-  // Visual: make player semi-transparent, show ghost aura
-  playerGroup.traverse(obj => {
-    if (obj.isMesh && obj.material) {
-      obj.material.transparent = true;
-      obj.material.opacity = 0.38;
-    }
-  });
-  playerGhostAura.visible = true;
+  // Swap to ghost appearance
+  playerNormalBody.visible = false;
+  playerGhostBody.visible  = true;
   ghostPunchCooldown = 0;
   velY = 0; velX = 0; velZ = 0;
   if (deathEl) deathEl.style.display = 'none';
@@ -1125,13 +1156,8 @@ function enterGhostMode() {
 
 function exitGhostMode() {
   isGhost = false;
-  playerGroup.traverse(obj => {
-    if (obj.isMesh && obj.material) {
-      obj.material.transparent = false;
-      obj.material.opacity = 1;
-    }
-  });
-  playerGhostAura.visible = false;
+  playerNormalBody.visible = true;
+  playerGhostBody.visible  = false;
   updateLivesHUD();
 }
 
@@ -1191,9 +1217,14 @@ function checkWinCondition() {
   for (const peer of peers.values()) {
     if (!peer.isGhost) { aliveCount++; aliveNames.push(peer.username || '?'); }
   }
-  if (peers.size === 0) return; // need at least 2 to win
-  if (aliveCount <= 1) {
-    const winner = aliveNames[0] || incoming.username;
+  if (peers.size === 0) return; // need at least 2 players to trigger win
+  // Everyone became a ghost simultaneously (draw) → return to lobby with no winner
+  if (aliveCount === 0) {
+    returnToLobby();
+    return;
+  }
+  if (aliveCount === 1) {
+    const winner = aliveNames[0];
     winGame(winner, winner === incoming.username);
   }
 }
@@ -1402,8 +1433,8 @@ function loop(now) {
     }
     if (keys[' '])     playerGroup.position.y += GHOST_SPEED * dt;
     if (keys['shift']) playerGroup.position.y -= GHOST_SPEED * dt;
-    // Pulsate ghost aura
-    playerGhostAura.scale.setScalar(1 + 0.08 * Math.sin(time * 3.5));
+    // Gentle float bob on ghost body
+    playerGhostBody.position.y = Math.sin(time * 2.4) * 0.08;
     // Ghost punch indicator
     const hint = document.getElementById('hint');
     if (hint && isLocked) {
@@ -1648,6 +1679,11 @@ function loop(now) {
       peer.rightArm.rotation.x = -Math.sin((1 - peer.punchTimer / 0.35) * Math.PI) * 1.6;
     } else {
       peer.rightArm.rotation.x = ps * 0.6;
+    }
+
+    // Ghost body bob
+    if (peer.isGhost && peer.ghostBody) {
+      peer.ghostBody.position.y = Math.sin(time * 2.4 + peer.tx * 0.5) * 0.08;
     }
   }
 
