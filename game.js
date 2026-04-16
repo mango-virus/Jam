@@ -208,9 +208,6 @@ function rebuildArena(seed) {
   }
 }
 
-// Build initial layout for the lobby view
-rebuildArena(42);
-
 // ------------------------------------------------------------------
 // Tile system — platform slowly breaks apart during a match
 // ------------------------------------------------------------------
@@ -243,6 +240,9 @@ for (let row = 0; row < TILE_ROWS; row++) {
     tileObjects.push({ mesh, col, row, cx: tx, cz: tz, state: 'solid', timer: 0, solidColor: new THREE.Color(0x3d2060) });
   }
 }
+
+// Build initial arena layout for the lobby view (tileObjects now populated)
+rebuildArena(42);
 
 // Shuffles tile indices using seeded LCG
 function shuffleTiles(seed) {
