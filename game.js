@@ -1374,13 +1374,14 @@ function loop(now) {
     }
     // Ghost punch cooldown
     if (isGhost && ghostPunchCooldown > 0) ghostPunchCooldown -= dt;
-    // Game over timer
-    if (gameOverTimer > 0) {
-      gameOverTimer -= dt;
-      if (gameOverTimer <= 0) returnToLobby();
-    }
     // Win condition check (every ~0.5s)
     if (Math.floor(gameTime * 2) !== Math.floor((gameTime - dt) * 2)) checkWinCondition();
+  }
+
+  // Game over countdown — runs in 'gameover' state (outside the 'playing' block)
+  if (gameState === 'gameover' && gameOverTimer > 0) {
+    gameOverTimer -= dt;
+    if (gameOverTimer <= 0) returnToLobby();
   }
 
   // --- Movement ---
