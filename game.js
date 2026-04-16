@@ -1722,7 +1722,7 @@ function loop(now) {
     const ov = circleOverlap(playerGroup.position.x, playerGroup.position.z, p.x, p.z, p.r + PLAYER_R);
     if (ov) {
       const heightDiff = p.topY - playerGroup.position.y;
-      if (heightDiff > 0 && heightDiff <= MAX_CLIMBABLE) {
+      if (heightDiff > 0.5 && heightDiff <= MAX_CLIMBABLE) {
         // Climbing: boost upward + full push-out so sprinting can't clip through
         if (velY < CLIMB_SPEED) velY = CLIMB_SPEED;
         onGround = false;
@@ -1748,7 +1748,7 @@ function loop(now) {
     if (dist2 >= PLAYER_R * PLAYER_R) continue;
     const dist = Math.sqrt(dist2);
     const heightDiff = ep.topY - py;
-    if (heightDiff > 0 && heightDiff <= MAX_CLIMBABLE) {
+    if (heightDiff > 0.5 && heightDiff <= MAX_CLIMBABLE) {
       // Climbing: boost upward + full push-out so sprinting can't clip through
       if (velY < CLIMB_SPEED) velY = CLIMB_SPEED;
       onGround = false;
