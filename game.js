@@ -103,65 +103,113 @@ addCloud(-20, -50,  80, 1.3);
 addCloud( 80, -40, -10, 1.0);
 addCloud(-70, -20,  10, 1.2);
 
-// Decorative glowing pillars — trimmed to fit the platform
-const PILLARS = [
-  [4, 3],   [-7, 5],  [10, 2],   [-4, -7],
-  [14, -3], [-11, 8], [6, -13],  [-2, 15],
-  [16, 10], [-14, -5],[10, 17],  [-13, -14],
-];
+// ------------------------------------------------------------------
+// Arena layout — pillars + elevated platforms (rebuilt every round)
+// ------------------------------------------------------------------
+
 let _seed = 42;
 function rand() { _seed = (_seed * 1664525 + 1013904223) & 0xffffffff; return (_seed >>> 0) / 0xffffffff; }
 
-const pillarData = []; // { x, z, r } used for collision
-
-for (const [x, z] of PILLARS) {
-  const h = 1.5 + rand() * 4;
-  const w = 0.4 + rand() * 1.2;
-  const hue = 0.72 + rand() * 0.15;
-  const col = new THREE.Color().setHSL(hue, 0.8, 0.25);
-  const emissive = new THREE.Color().setHSL(hue, 1, 0.1);
-  const pillar = new THREE.Mesh(
-    new THREE.BoxGeometry(w, h, w),
-    new THREE.MeshStandardMaterial({ color: col, emissive, roughness: 0.4 })
-  );
-  pillar.position.set(x, h / 2, z);
-  pillar.castShadow = true;
-  scene.add(pillar);
-  const glow = new THREE.PointLight(new THREE.Color().setHSL(hue, 1, 0.6), 0.8, 6);
-  glow.position.set(x, h + 0.5, z);
-  scene.add(glow);
-  pillarData.push({ x, z, r: w / 2, topY: h });
-}
-
-// ------------------------------------------------------------------
-// Elevated step platforms
-// ------------------------------------------------------------------
+const pillarData        = []; // { x, z, r, topY }  – collision data
+const pillarMeshes      = []; // THREE.Mesh refs for teardown
+const pillarLights      = []; // THREE.PointLight refs for teardown
 
 const CLIMB_SPEED   = 2.5;   // m/s upward when pressing into a climbable object
 const MAX_CLIMBABLE = 2.2;   // max height above current Y that can be climbed
 
-const elevatedPlatforms = []; // { x, z, hw, hd, topY }
+const elevatedPlatforms = []; // { x, z, hw, hd, topY } – collision data
+const epMeshes          = []; // THREE.Mesh refs for teardown
 
-const EP_DEFS = [
-  { x:  7,  z: -5,  w: 5.0, d: 3.0, h: 0.8,  color: 0x3a1858 },
-  { x: -6,  z: -8,  w: 4.0, d: 4.0, h: 1.2,  color: 0x1a2a50 },
-  { x:  1,  z: 10,  w: 5.0, d: 2.5, h: 0.7,  color: 0x1e3830 },
-  { x:-10,  z: 11,  w: 3.5, d: 4.0, h: 1.6,  color: 0x3a1818 },
-  { x:  8,  z:-11,  w: 4.0, d: 4.0, h: 1.0,  color: 0x2a2050 },
-  { x: -2,  z:  2,  w: 3.5, d: 3.5, h: 3.0,  color: 0x1a0840 },
-];
+function rebuildArena(seed) {
+  // --- Tear down old pillars ---
+  for (const m of pillarMeshes) scene.remove(m);
+  for (const l of pillarLights) scene.remove(l);
+  pillarMeshes.length = 0;
+  pillarLights.length = 0;
+  pillarData.length   = 0;
 
-for (const d of EP_DEFS) {
-  const mesh = new THREE.Mesh(
-    new THREE.BoxGeometry(d.w, d.h, d.d),
-    new THREE.MeshStandardMaterial({ color: d.color, roughness: 0.8, metalness: 0.05 })
-  );
-  mesh.position.set(d.x, d.h / 2, d.z);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  scene.add(mesh);
-  elevatedPlatforms.push({ x: d.x, z: d.z, hw: d.w / 2, hd: d.d / 2, topY: d.h });
+  // --- Tear down old elevated platforms ---
+  for (const m of epMeshes) scene.remove(m);
+  epMeshes.length          = 0;
+  elevatedPlatforms.length = 0;
+
+  // Seed the LCG so all players get identical layouts from the same seed
+  _seed = (seed ^ 0xdeadbeef) >>> 0;
+
+  // --- Pillars ---
+  const pillarCount = 7 + Math.floor(rand() * 5); // 7–11
+  const placed = [];
+  for (let i = 0; i < pillarCount; i++) {
+    let px = 0, pz = 0;
+    for (let attempt = 0; attempt < 80; attempt++) {
+      px = (rand() * 2 - 1) * (PLATFORM_HALF - 4);
+      pz = (rand() * 2 - 1) * (PLATFORM_HALF - 4);
+      const tooCenter = Math.hypot(px, pz) < 4;
+      const tooClose  = placed.some(p => Math.hypot(px - p.x, pz - p.z) < 3.5);
+      if (!tooCenter && !tooClose) break;
+    }
+    const h   = 1.5 + rand() * 4.5;
+    const w   = 0.4 + rand() * 1.4;
+    const hue = rand(); // full colour spectrum
+    const shape = Math.floor(rand() * 3); // 0=box, 1=hex prism, 2=tapered cylinder
+    const col      = new THREE.Color().setHSL(hue, 0.8, 0.25);
+    const emissive = new THREE.Color().setHSL(hue, 1.0, 0.10);
+    let geo;
+    if      (shape === 0) geo = new THREE.BoxGeometry(w, h, w);
+    else if (shape === 1) geo = new THREE.CylinderGeometry(w / 2, w / 2, h, 6);
+    else                  geo = new THREE.CylinderGeometry(w / 2, w * 0.65, h, 8);
+    const mesh = new THREE.Mesh(geo,
+      new THREE.MeshStandardMaterial({ color: col, emissive, roughness: 0.4 }));
+    mesh.position.set(px, h / 2, pz);
+    mesh.castShadow = true;
+    scene.add(mesh);
+    pillarMeshes.push(mesh);
+    const glow = new THREE.PointLight(new THREE.Color().setHSL(hue, 1, 0.6), 0.8, 6);
+    glow.position.set(px, h + 0.5, pz);
+    scene.add(glow);
+    pillarLights.push(glow);
+    pillarData.push({ x: px, z: pz, r: w / 2, topY: h });
+    placed.push({ x: px, z: pz });
+  }
+
+  // --- Elevated step platforms ---
+  const epCount = 3 + Math.floor(rand() * 4); // 3–6
+  for (let i = 0; i < epCount; i++) {
+    let ex = 0, ez = 0;
+    for (let attempt = 0; attempt < 60; attempt++) {
+      ex = (rand() * 2 - 1) * (PLATFORM_HALF - 6);
+      ez = (rand() * 2 - 1) * (PLATFORM_HALF - 6);
+      const tooCenter = Math.hypot(ex, ez) < 3;
+      const tooClose  = elevatedPlatforms.some(p => Math.hypot(ex - p.x, ez - p.z) < 5);
+      if (!tooCenter && !tooClose) break;
+    }
+    const ew  = 3.0 + rand() * 4.0;
+    const ed  = 2.5 + rand() * 3.0;
+    const eh  = 0.5 + rand() * 3.0;
+    const hue = rand();
+    const eCol = new THREE.Color().setHSL(hue, 0.55, 0.15);
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(ew, eh, ed),
+      new THREE.MeshStandardMaterial({ color: eCol, roughness: 0.8, metalness: 0.05 }));
+    mesh.position.set(ex, eh / 2, ez);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+    epMeshes.push(mesh);
+    elevatedPlatforms.push({ x: ex, z: ez, hw: ew / 2, hd: ed / 2, topY: eh });
+  }
+
+  // --- Randomise tile base colour ---
+  const tileHue = rand();
+  const tileCol = new THREE.Color().setHSL(tileHue, 0.72, 0.18);
+  for (const t of tileObjects) {
+    t.solidColor = tileCol.clone();
+    t.mesh.material.color.copy(tileCol);
+  }
 }
+
+// Build initial layout for the lobby view
+rebuildArena(42);
 
 // ------------------------------------------------------------------
 // Tile system — platform slowly breaks apart during a match
@@ -178,22 +226,21 @@ const TILE_SINK_S      = 1.8;  // sinking animation duration
 const tileSize   = (PLATFORM_HALF * 2) / TILE_COLS;  // ~8 units
 const tileObjects = []; // { mesh, col, row, state:'solid'|'warning'|'sinking'|'gone', timer }
 
-const tileMat = new THREE.MeshStandardMaterial({ color: 0x3d2060, roughness: 0.85, metalness: 0.1 });
-
 for (let row = 0; row < TILE_ROWS; row++) {
   for (let col = 0; col < TILE_COLS; col++) {
     const tx = -PLATFORM_HALF + tileSize * (col + 0.5);
     const tz = -PLATFORM_HALF + tileSize * (row + 0.5);
     const mesh = new THREE.Mesh(
       new THREE.BoxGeometry(tileSize - 0.12, 4.05, tileSize - 0.12),
-      tileMat.clone()
+      new THREE.MeshStandardMaterial({ color: 0x3d2060, roughness: 0.85, metalness: 0.1 })
     );
     mesh.position.set(tx, -2, tz);
     mesh.receiveShadow = true;
     mesh.castShadow    = false;
     mesh.visible       = false; // hidden until game starts
     scene.add(mesh);
-    tileObjects.push({ mesh, col, row, cx: tx, cz: tz, state: 'solid', timer: 0 });
+    // solidColor is set by rebuildArena each round
+    tileObjects.push({ mesh, col, row, cx: tx, cz: tz, state: 'solid', timer: 0, solidColor: new THREE.Color(0x3d2060) });
   }
 }
 
@@ -1358,7 +1405,7 @@ function returnToLobby() {
   hasArmor = localStorage.getItem('arenaHasArmor') === '1';
   playerArmorGroup.visible = hasArmor;
   // Reset tiles and restore platform
-  for (const t of tileObjects) { t.state = 'solid'; t.timer = 0; t.mesh.visible = false; t.mesh.position.y = -2; t.mesh.material.color.set(0x3d2060); }
+  for (const t of tileObjects) { t.state = 'solid'; t.timer = 0; t.mesh.visible = false; t.mesh.position.y = -2; t.mesh.material.color.copy(t.solidColor); }
   tileDropIndex = 0;
   gameTime = 0;
   platform.visible = true;
@@ -1396,13 +1443,15 @@ function startGame(seed, broadcast) {
   for (const it of groundItems) scene.remove(it.group);
   groundItems.length = 0;
   itemTimer = Date.now() + 5000;
+  // Randomise arena layout (pillars, elevated platforms, tile colour) for this round
+  rebuildArena(seed);
   // Tile setup
   gameTime       = 0;
   tileOrder      = shuffleTiles(seed);
   tileDropIndex  = 0;
   nextTileTime   = TILE_GRACE_S;
-  // Show tiles
-  for (const t of tileObjects) { t.state = 'solid'; t.timer = 0; t.mesh.visible = true; t.mesh.position.y = -2; t.mesh.material.color.set(0x3d2060); }
+  // Show tiles using this round's solid colour
+  for (const t of tileObjects) { t.state = 'solid'; t.timer = 0; t.mesh.visible = true; t.mesh.position.y = -2; t.mesh.material.color.copy(t.solidColor); }
   // Hide main platform mesh so tiles take over visually
   platform.visible = false;
   // Spawn player on center pillar
@@ -1521,9 +1570,10 @@ function loop(now) {
     for (const t of tileObjects) {
       if (t.state === 'warning') {
         t.timer -= dt;
-        // Flash the tile
+        // Flash the tile between warning orange and the round's solid colour
         const flash = Math.sin(t.timer * 14) > 0;
-        t.mesh.material.color.set(flash ? 0xff4400 : 0x3d2060);
+        if (flash) t.mesh.material.color.set(0xff4400);
+        else t.mesh.material.color.copy(t.solidColor);
         if (t.timer <= 0) { t.state = 'sinking'; t.timer = TILE_SINK_S; t.mesh.material.color.set(0x220800); }
       } else if (t.state === 'sinking') {
         t.timer -= dt;
