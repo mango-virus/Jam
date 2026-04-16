@@ -1378,17 +1378,16 @@ function loop(now) {
     if (ov) {
       const heightDiff = p.topY - playerGroup.position.y;
       if (heightDiff > 0 && heightDiff <= MAX_CLIMBABLE) {
-        // Climbing: boost upward, small nudge out to prevent deep clip
+        // Climbing: boost upward + full push-out so sprinting can't clip through
         if (velY < CLIMB_SPEED) velY = CLIMB_SPEED;
         onGround = false;
-        playerGroup.position.x += ov.nx * 0.12;
-        playerGroup.position.z += ov.nz * 0.12;
+        playerGroup.position.x += ov.nx;
+        playerGroup.position.z += ov.nz;
       } else if (playerGroup.position.y < p.topY) {
         // Too tall or below — solid wall
         playerGroup.position.x += ov.nx;
         playerGroup.position.z += ov.nz;
       }
-      // playerGroup.position.y >= p.topY: player on top, no side push needed
     }
   }
 
@@ -1405,11 +1404,11 @@ function loop(now) {
     const dist = Math.sqrt(dist2);
     const heightDiff = ep.topY - py;
     if (heightDiff > 0 && heightDiff <= MAX_CLIMBABLE) {
-      // Climbing
+      // Climbing: boost upward + full push-out so sprinting can't clip through
       if (velY < CLIMB_SPEED) velY = CLIMB_SPEED;
       onGround = false;
       if (dist > 0.001) {
-        const s = (PLAYER_R - dist) / dist * 0.12;
+        const s = (PLAYER_R - dist) / dist;
         playerGroup.position.x += dx * s;
         playerGroup.position.z += dz * s;
       }
