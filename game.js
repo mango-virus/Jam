@@ -616,6 +616,7 @@ scene.add(playerGroup);
 
 const MAX_ITEMS       = 5;
 const ITEM_INTERVAL   = 10000; // ms between item spawn attempts
+const ITEM_LIFETIME   = 15;    // seconds before an uncollected item despawns
 const ITEM_PICKUP_R   = 1.4;   // metres to pick up item
 const SWORD_KNOCKBACK       = 38;
 const GLOVE_KNOCKBACK       = 70;
@@ -732,7 +733,7 @@ function makeGroundItem(type, x, z) {
   }
   g.position.set(x, 0.1, z);
   scene.add(g);
-  return { group: g, type, x, z };
+  return { group: g, type, x, z, expires: performance.now() / 1000 + ITEM_LIFETIME };
 }
 
 function pipBar(cur, max) {
@@ -1759,13 +1760,25 @@ function loop(now) {
     }
   }
 
-  // --- Ground item bobbing + tile removal ---
+  // --- Ground item bobbing, expiry, and tile removal ---
   for (let i = groundItems.length - 1; i >= 0; i--) {
     const it = groundItems[i];
     if (isTileUnstable(it.x, it.z)) {
       scene.remove(it.group);
       groundItems.splice(i, 1);
       continue;
+    }
+    const timeLeft = it.expires - time;
+    if (timeLeft <= 0) {
+      scene.remove(it.group);
+      groundItems.splice(i, 1);
+      continue;
+    }
+    // Flicker in the last 3 seconds to warn players it's about to vanish
+    if (timeLeft < 3) {
+      it.group.visible = Math.sin(time * 18) > 0;
+    } else {
+      it.group.visible = true;
     }
     it.group.position.y = 0.1 + Math.sin(time * 2.5 + it.x) * 0.08;
     it.group.rotation.y += dt * 1.2;
