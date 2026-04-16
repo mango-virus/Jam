@@ -553,19 +553,16 @@ lobbyPortal.group.position.set(0, 0, -20);
 scene.add(lobbyPortal.group);
 
 // ------------------------------------------------------------------
-// Chest + item system
+// Item system
 // ------------------------------------------------------------------
 
-const MAX_CHESTS       = 2;
-const CHEST_INTERVAL   = 18000; // ms between spawn attempts
-const CHEST_OPEN_DELAY = 1.6;   // seconds before chest disappears after opening
-const ITEM_PICKUP_R    = 1.4;   // metres to pick up item
-const CHEST_INTERACT_R = 1.8;
-const SWORD_KNOCKBACK  = 38;
+const MAX_ITEMS      = 5;
+const ITEM_INTERVAL  = 10000; // ms between item spawn attempts
+const ITEM_PICKUP_R  = 1.4;   // metres to pick up item
+const SWORD_KNOCKBACK = 38;
 
-let chestTimer = Date.now() + 5000; // first chest after 5s
-const activeChests = []; // { group, lidPivot, x, z, opened, openTimer }
-const groundItems  = []; // { group, type, x, z }
+let itemTimer  = Date.now() + 5000; // first item after 5s
+const groundItems = []; // { group, type, x, z }
 let hasSword       = false;
 let swordDurability  = 0;
 let hasShield      = false;
@@ -576,62 +573,19 @@ const SWORD_DURABILITY  = 10;
 const SHIELD_DURABILITY = 7;
 const durabilityEl = document.getElementById('durability');
 
-// Safe random positions on platform (away from edges, pillars, and gone/unstable tiles).
-// Returns null if no valid position found.
-function randomChestPos() {
+// Safe random position on the platform (away from edges, pillars, other items, unstable tiles).
+// Returns null if no valid spot found.
+function randomItemPos() {
   const margin = 3;
   for (let tries = 0; tries < 40; tries++) {
     const x = (Math.random() * 2 - 1) * (PLATFORM_HALF - margin);
     const z = (Math.random() * 2 - 1) * (PLATFORM_HALF - margin);
-    const tooClose  = pillarData.some(p => Math.hypot(x - p.x, z - p.z) < 2.5);
-    const overlap   = activeChests.some(c => Math.hypot(x - c.x, z - c.z) < 3);
-    const badTile   = isTileUnstable(x, z) || isTileGone(x, z);
+    const tooClose = pillarData.some(p => Math.hypot(x - p.x, z - p.z) < 2.5);
+    const overlap  = groundItems.some(it => Math.hypot(x - it.x, z - it.z) < 2.0);
+    const badTile  = isTileUnstable(x, z) || isTileGone(x, z);
     if (!tooClose && !overlap && !badTile) return { x, z };
   }
-  return null; // no valid spot (most tiles gone)
-}
-
-function makeChest(x, z) {
-  const group = new THREE.Group();
-  group.position.set(x, 0, z);
-
-  const woodMat   = new THREE.MeshStandardMaterial({ color: 0x7a4010, roughness: 0.85 });
-  const metalMat  = new THREE.MeshStandardMaterial({ color: 0xd4a017, metalness: 0.8, roughness: 0.3 });
-
-  const base = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.45, 0.52), woodMat);
-  base.position.y = 0.225;
-  base.castShadow = true;
-  group.add(base);
-
-  // Metal bands
-  for (const bz of [-0.22, 0.22]) {
-    const band = new THREE.Mesh(new THREE.BoxGeometry(0.74, 0.06, 0.04), metalMat);
-    band.position.set(0, 0.225, bz);
-    group.add(band);
-  }
-
-  // Lid pivot at top-back of base
-  const lidPivot = new THREE.Group();
-  lidPivot.position.set(0, 0.45, -0.24);
-  group.add(lidPivot);
-
-  const lid = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.22, 0.52), woodMat);
-  lid.position.set(0, 0.11, 0.24);
-  lid.castShadow = true;
-  lidPivot.add(lid);
-
-  // Clasp
-  const clasp = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.08, 0.06), metalMat);
-  clasp.position.set(0, 0.45, 0.27);
-  group.add(clasp);
-
-  // Glow
-  const glow = new THREE.PointLight(0xffd700, 0.6, 5);
-  glow.position.set(0, 1, 0);
-  group.add(glow);
-
-  scene.add(group);
-  return { group, lidPivot, glow, x, z, opened: false, openTimer: 0 };
+  return null;
 }
 
 function makeGroundItem(type, x, z) {
@@ -969,7 +923,7 @@ document.addEventListener('pointerlockchange', () => {
   isLocked = document.pointerLockElement === renderer.domElement;
   const hint = document.getElementById('hint');
   if (hint) hint.textContent = isLocked
-    ? 'WASD · Shift sprint · Space jump · LMB punch/sword · RMB shield · E open/equip · Z drop'
+    ? 'WASD · Shift sprint · Space jump · LMB punch/sword · RMB shield · E equip · Z drop'
     : 'Click to capture mouse';
 });
 
@@ -993,43 +947,26 @@ document.addEventListener('keydown', e => {
   keys[e.key.toLowerCase()] = true;
   if (e.key === ' ') e.preventDefault();
 
-  // E — open chest / equip item
+  // E — pick up nearby item
   if (e.key === 'e' || e.key === 'E') {
     const px = playerGroup.position.x, pz = playerGroup.position.z;
-    // Try to open a chest first
-    let interacted = false;
-    for (let i = activeChests.length - 1; i >= 0; i--) {
-      const ch = activeChests[i];
-      if (!ch.opened && Math.hypot(px - ch.x, pz - ch.z) < CHEST_INTERACT_R) {
-        ch.opened = true;
-        ch.openTimer = CHEST_OPEN_DELAY;
-        // drop an item at chest position
-        const type = Math.random() < 0.5 ? 'sword' : 'shield';
-        groundItems.push(makeGroundItem(type, ch.x + (Math.random() - 0.5) * 0.5, ch.z + (Math.random() - 0.5) * 0.5));
-        interacted = true;
-        break;
-      }
-    }
-    // Otherwise pick up a nearby ground item
-    if (!interacted) {
-      for (let i = groundItems.length - 1; i >= 0; i--) {
-        const it = groundItems[i];
-        if (Math.hypot(px - it.x, pz - it.z) < ITEM_PICKUP_R) {
-          // Drop same-slot item first if already held
-          const dropAngle = playerGroup.rotation.y + Math.PI;
-          if (it.type === 'sword' && hasSword) {
-            groundItems.push(makeGroundItem('sword', px + Math.sin(dropAngle) * 1.2, pz + Math.cos(dropAngle) * 1.2));
-            hasSword = false; swordDurability = 0; playerSword.visible = false;
-          }
-          if (it.type === 'shield' && hasShield) {
-            groundItems.push(makeGroundItem('shield', px + Math.sin(dropAngle) * 0.6, pz + Math.cos(dropAngle) * 0.6));
-            hasShield = false; shieldDurability = 0; playerShield.visible = false;
-          }
-          scene.remove(it.group);
-          groundItems.splice(i, 1);
-          equipItem(it.type);
-          break;
+    for (let i = groundItems.length - 1; i >= 0; i--) {
+      const it = groundItems[i];
+      if (Math.hypot(px - it.x, pz - it.z) < ITEM_PICKUP_R) {
+        // Drop same-slot item first if already held
+        const dropAngle = playerGroup.rotation.y + Math.PI;
+        if (it.type === 'sword' && hasSword) {
+          groundItems.push(makeGroundItem('sword', px + Math.sin(dropAngle) * 1.2, pz + Math.cos(dropAngle) * 1.2));
+          hasSword = false; swordDurability = 0; playerSword.visible = false;
         }
+        if (it.type === 'shield' && hasShield) {
+          groundItems.push(makeGroundItem('shield', px + Math.sin(dropAngle) * 0.6, pz + Math.cos(dropAngle) * 0.6));
+          hasShield = false; shieldDurability = 0; playerShield.visible = false;
+        }
+        scene.remove(it.group);
+        groundItems.splice(i, 1);
+        equipItem(it.type);
+        break;
       }
     }
   }
@@ -1286,6 +1223,10 @@ function returnToLobby() {
   tileDropIndex = 0;
   gameTime = 0;
   platform.visible = true;
+  // Clear all ground items
+  for (const it of groundItems) scene.remove(it.group);
+  groundItems.length = 0;
+  itemTimer = Date.now() + 5000;
   // Move player to lobby
   playerGroup.position.set(0, 1, 0);
   velY = 0; velX = 0; velZ = 0;
@@ -1308,6 +1249,10 @@ function startGame(seed, broadcast) {
   isDead     = false;
   ghostPunchCooldown = 0;
   lastHitBy  = null;
+  // Clear any leftover items and reset spawn timer
+  for (const it of groundItems) scene.remove(it.group);
+  groundItems.length = 0;
+  itemTimer = Date.now() + 5000;
   // Tile setup
   gameTime       = 0;
   tileOrder      = shuffleTiles(seed);
@@ -1645,34 +1590,13 @@ function loop(now) {
   const lookY = playerGroup.position.y + 1 - Math.sin(pitch) * CAM_DIST * 0.5;
   camera.lookAt(playerGroup.position.x, lookY, playerGroup.position.z);
 
-  // --- Chest spawning + open animation ---
-  if (gameState === 'playing' && !isDead && !isGhost && Date.now() >= chestTimer && activeChests.length < MAX_CHESTS) {
-    chestTimer = Date.now() + CHEST_INTERVAL;
-    const pos = randomChestPos();
-    if (pos) activeChests.push(makeChest(pos.x, pos.z));
-  }
-
-  for (let i = activeChests.length - 1; i >= 0; i--) {
-    const ch = activeChests[i];
-    // Remove chest if its tile has become unstable or gone
-    if (isTileUnstable(ch.x, ch.z)) {
-      scene.remove(ch.group);
-      activeChests.splice(i, 1);
-      continue;
-    }
-    if (ch.opened) {
-      // Animate lid opening
-      const targetRot = -Math.PI * 0.75;
-      ch.lidPivot.rotation.x += (targetRot - ch.lidPivot.rotation.x) * Math.min(1, dt * 8);
-      ch.glow.intensity = Math.max(0, ch.glow.intensity - dt * 2);
-      ch.openTimer -= dt;
-      if (ch.openTimer <= 0) {
-        scene.remove(ch.group);
-        activeChests.splice(i, 1);
-      }
-    } else {
-      // Gentle idle bob
-      ch.group.position.y = Math.sin(time * 1.8 + ch.x) * 0.04;
+  // --- Item spawning ---
+  if (gameState === 'playing' && Date.now() >= itemTimer && groundItems.length < MAX_ITEMS) {
+    itemTimer = Date.now() + ITEM_INTERVAL;
+    const pos = randomItemPos();
+    if (pos) {
+      const type = Math.random() < 0.5 ? 'sword' : 'shield';
+      groundItems.push(makeGroundItem(type, pos.x, pos.z));
     }
   }
 
