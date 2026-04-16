@@ -1012,13 +1012,15 @@ async function setupMultiplayer() {
         peer.lives    = data.lives ?? peer.lives;
         peer.hasArmor = !!data.hasArmor;
         if (peer.armorGroup) peer.armorGroup.visible = !!data.hasArmor && !data.isGhost;
-        if (data.ready !== undefined) { peer.ready = !!data.ready; updateMenuReadyList(); }
+        if (data.ready !== undefined) peer.ready = !!data.ready;
+        if (gameState === 'lobby') updateMenuReadyList();
       }
       refreshPeerCount();
     });
 
     refreshPeerCount();
     broadcastSelf();
+    updateMenuReadyList();
     console.log('[jam] multiplayer ready');
   } catch (err) {
     console.error('[jam] multiplayer failed:', err);
@@ -1375,7 +1377,11 @@ function returnToLobby() {
   if (_nameInput) _nameInput.value = incoming.username;
   document.exitPointerLock();
   updateLivesHUD();
+  // Reset all peers' ready flags from the previous match
+  for (const peer of peers.values()) peer.ready = false;
   updateMenuReadyList();
+  // Announce our own reset state to all peers immediately
+  broadcastSelf();
 }
 
 function startGame(seed, broadcast) {
