@@ -1382,6 +1382,13 @@ function die() {
   if (deathEl) deathEl.style.display = 'flex';
 }
 
+function randomSafeTile() {
+  const solid = tileObjects.filter(t => t.state === 'solid');
+  if (solid.length === 0) return { x: SPAWN_X, z: SPAWN_Z };
+  const t = solid[Math.floor(Math.random() * solid.length)];
+  return { x: t.cx, z: t.cz };
+}
+
 function respawn() {
   isDead = false;
   hasFallenOff = false;
@@ -1392,7 +1399,8 @@ function respawn() {
     return;
   }
   if (gameState === 'playing') {
-    playerGroup.position.set(SPAWN_X, SPAWN_Y, SPAWN_Z);
+    const sp = randomSafeTile();
+    playerGroup.position.set(sp.x, SPAWN_Y, sp.z);
   } else {
     playerGroup.position.set(0, 1, 0);
   }
