@@ -1230,14 +1230,23 @@ function checkWinCondition() {
 
 function winGame(winnerName, isLocal) {
   gameState = 'gameover';
-  gameOverTimer = 6;
+  gameOverTimer = 5;
   if (isLocal) {
     localStorage.setItem('arenaHasArmor', '1');
   }
-  // Show overlay
+  // Show overlay with live countdown
   if (gameOverEl) {
     document.getElementById('game-over-winner').textContent = `🏆 ${winnerName} wins!`;
+    const subEl = document.getElementById('game-over-sub');
+    subEl.textContent = 'Returning to lobby in 5…';
     gameOverEl.classList.add('active');
+    let count = 4;
+    const iv = setInterval(() => {
+      if (gameState !== 'gameover') { clearInterval(iv); return; }
+      subEl.textContent = count > 0 ? `Returning to lobby in ${count}…` : 'Returning to lobby…';
+      count--;
+      if (count < 0) clearInterval(iv);
+    }, 1000);
   }
   updateLivesHUD();
 }
