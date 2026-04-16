@@ -329,8 +329,13 @@ const SWORD_KNOCKBACK  = 38;
 let chestTimer = Date.now() + 5000; // first chest after 5s
 const activeChests = []; // { group, lidPivot, x, z, opened, openTimer }
 const groundItems  = []; // { group, type, x, z }
-let equippedItem   = null; // 'sword' | 'shield' | null
-let isBlocking     = false;
+let equippedItem       = null; // 'sword' | 'shield' | null
+let equippedDurability = 0;
+let isBlocking         = false;
+
+const SWORD_DURABILITY = 10;
+const SHIELD_DURABILITY = 7;
+const durabilityEl = document.getElementById('durability');
 
 // Safe random positions on platform (away from edges and pillars)
 function randomChestPos() {
@@ -420,11 +425,33 @@ function makeGroundItem(type, x, z) {
   return { group: g, type, x, z };
 }
 
+function updateDurabilityHUD() {
+  if (!durabilityEl) return;
+  if (!equippedItem) { durabilityEl.textContent = ''; return; }
+  const max   = equippedItem === 'sword' ? SWORD_DURABILITY : SHIELD_DURABILITY;
+  const ratio = equippedDurability / max;
+  const color = ratio > 0.5 ? '#7fff7f' : ratio > 0.25 ? '#ffcc00' : '#ff4444';
+  const icon  = equippedItem === 'sword' ? '⚔' : '🛡';
+  const pips  = '█'.repeat(equippedDurability) + '░'.repeat(max - equippedDurability);
+  durabilityEl.innerHTML = `${icon} <span style="color:${color};letter-spacing:1px">${pips}</span>`;
+}
+
 function equipItem(type) {
   equippedItem = type;
+  equippedDurability = type === 'sword' ? SWORD_DURABILITY : SHIELD_DURABILITY;
   playerSword.visible = (type === 'sword');
   playerShield.visible = (type === 'shield');
   playerShieldEmblem.visible = (type === 'shield');
+  updateDurabilityHUD();
+}
+
+function breakItem() {
+  equippedItem = null;
+  equippedDurability = 0;
+  playerSword.visible = false;
+  playerShield.visible = false;
+  playerShieldEmblem.visible = false;
+  updateDurabilityHUD();
 }
 
 function dropItem() {
@@ -432,9 +459,11 @@ function dropItem() {
   const px = playerGroup.position.x, pz = playerGroup.position.z;
   groundItems.push(makeGroundItem(equippedItem, px + Math.sin(playerGroup.rotation.y + Math.PI) * 1.2, pz + Math.cos(playerGroup.rotation.y + Math.PI) * 1.2));
   equippedItem = null;
+  equippedDurability = 0;
   playerSword.visible = false;
   playerShield.visible = false;
   playerShieldEmblem.visible = false;
+  updateDurabilityHUD();
 }
 
 // Canvas-texture sprite labels (portals + peer names)
@@ -579,7 +608,11 @@ async function setupMultiplayer() {
     const [sPunch, onPunch] = room.makeAction('punch');
     sendPunch = sPunch;
     onPunch(({ kx, kz, force }) => {
-      if (isBlocking && equippedItem === 'shield') return; // shield block
+      if (isBlocking && equippedItem === 'shield') {
+        equippedDurability--;
+        if (equippedDurability <= 0) breakItem(); else updateDurabilityHUD();
+        return;
+      }
       const kb = force ?? KNOCKBACK_H;
       velX = kx * kb;
       velZ = kz * kb;
@@ -781,6 +814,11 @@ function doPunch() {
     const { id, dx, dz, dist } = nearest;
     const force = equippedItem === 'sword' ? SWORD_KNOCKBACK : KNOCKBACK_H;
     sendPunch({ kx: dx / dist, kz: dz / dist, force }, id);
+    // Sword loses 1 durability per hit
+    if (equippedItem === 'sword') {
+      equippedDurability--;
+      if (equippedDurability <= 0) breakItem(); else updateDurabilityHUD();
+    }
   }
 }
 const CAM_DIST   = 5;

@@ -82,6 +82,12 @@ body > canvas {
   opacity: 0.7;
 }
 
+#durability {
+  margin-top: 0.4rem;
+  font-size: 0.85rem;
+  min-height: 1.1em;
+}
+
 @keyframes deathpulse {
   from { transform: scale(1.4); opacity: 0; }
   to   { transform: scale(1);   opacity: 1; }
