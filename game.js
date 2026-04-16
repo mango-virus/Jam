@@ -814,30 +814,35 @@ function equipItem(type) {
     hasShield = true; shieldDurability = SHIELD_DURABILITY;
     playerShield.visible = true;
   }
+  window.SFX?.pickup();
   updateDurabilityHUD();
 }
 
 function breakSword() {
   hasSword = false; swordDurability = 0;
   playerSword.visible = false;
+  window.SFX?.itemBreak();
   updateDurabilityHUD();
 }
 
 function breakGlove() {
   hasGlove = false; gloveDurability = 0;
   playerGlove.visible = false;
+  window.SFX?.itemBreak();
   updateDurabilityHUD();
 }
 
 function breakBat() {
   hasBat = false; batDurability = 0;
   playerBat.visible = false;
+  window.SFX?.itemBreak();
   updateDurabilityHUD();
 }
 
 function breakShield() {
   hasShield = false; shieldDurability = 0;
   playerShield.visible = false;
+  window.SFX?.shieldBreak();
   updateDurabilityHUD();
 }
 
@@ -1002,6 +1007,7 @@ async function setupMultiplayer() {
       if (!isGhost && ghostPunch === true && isDead) return; // already dying
       if (isBlocking && hasShield && !ghostPunch) {
         shieldDurability--;
+        window.SFX?.shieldBlock();
         if (shieldDurability <= 0) breakShield(); else updateDurabilityHUD();
         return;
       }
@@ -1011,10 +1017,23 @@ async function setupMultiplayer() {
       velX = kx * kb;
       velZ = kz * kb;
       if (homeRun) {
-        // 45° launch: vertical speed matches horizontal magnitude
         velY = kb;
+        window.SFX?.batHomeRun();
+      } else if (ghostPunch) {
+        window.SFX?.ghostPunch();
+        velY = Math.max(velY, GHOST_KNOCKBACK_UP);
+      } else if (force === SWORD_KNOCKBACK) {
+        window.SFX?.swordHit();
+        velY = Math.max(velY, KNOCKBACK_UP);
+      } else if (force === GLOVE_KNOCKBACK) {
+        window.SFX?.gloveHit();
+        velY = Math.max(velY, KNOCKBACK_UP);
+      } else if (force === BAT_NORMAL_KNOCKBACK) {
+        window.SFX?.batNormal();
+        velY = Math.max(velY, KNOCKBACK_UP);
       } else {
-        velY = Math.max(velY, ghostPunch ? GHOST_KNOCKBACK_UP : KNOCKBACK_UP);
+        window.SFX?.punch();
+        velY = Math.max(velY, KNOCKBACK_UP);
       }
       onGround = false;
       // Lightning effect on the receiver's end for home-run hits
@@ -1341,6 +1360,7 @@ function die() {
   if (isDead || isGhost) return;
   isDead = true;
   deathTimer = 2.0;
+  window.SFX?.die();
   velY = 0;
   if (gameState === 'playing') {
     // Notify ghost who killed us so they can revive
@@ -1365,6 +1385,7 @@ function die() {
 function respawn() {
   isDead = false;
   hasFallenOff = false;
+  window.SFX?.respawn();
   if (gameState === 'playing' && localLives <= 0) {
     enterGhostMode();
     playerGroup.position.set(SPAWN_X, SPAWN_Y + 3, SPAWN_Z);
@@ -1522,6 +1543,8 @@ function doPunch() {
   if (punchTimer > 0 || isDead) return;
   punchTimer = 0.35;
   broadcastSelf();
+  // Swing sound plays immediately regardless of hit/miss
+  if (!hasSword && !hasGlove && !hasBat) window.SFX?.punch();
 
   const px = playerGroup.position.x;
   const py = playerGroup.position.y;
@@ -1546,6 +1569,12 @@ function doPunch() {
       force = homeRun ? BAT_HOME_RUN_KNOCKBACK : BAT_NORMAL_KNOCKBACK;
     }
     sendPunch({ kx: dx / dist, kz: dz / dist, force, homeRun }, id);
+    // Play attacker-side sound
+    if (homeRun)           window.SFX?.batHomeRun();
+    else if (hasBat)       window.SFX?.batNormal();
+    else if (hasSword)     window.SFX?.swordHit();
+    else if (hasGlove)     window.SFX?.gloveHit();
+    else                   window.SFX?.punch();
     // Spawn lightning at the target's position when attacker scores a home run
     if (homeRun) {
       const peer = peers.get(id);
