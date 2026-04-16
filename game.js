@@ -1751,13 +1751,9 @@ function loop(now) {
   if (!onGround && !hasFallenOff && velY <= 0) {
     const surf = getSurfaceBelow(playerGroup.position.x, playerGroup.position.z);
     if (surf !== null && playerGroup.position.y <= surf + 0.05) {
-      if (-velY > FALL_DAMAGE_VEL) {
-        die();
-      } else {
-        playerGroup.position.y = surf;
-        velY = 0;
-        onGround = true;
-      }
+      playerGroup.position.y = surf;
+      velY = 0;
+      onGround = true;
     }
   }
 
