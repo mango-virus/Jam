@@ -616,7 +616,7 @@ scene.add(playerGroup);
 
 const MAX_ITEMS       = 5;
 const ITEM_INTERVAL   = 10000; // ms between item spawn attempts
-const ITEM_LIFETIME   = 15;    // seconds before an uncollected item despawns
+const ITEM_LIFETIME   = 20;    // seconds before an uncollected item despawns
 const ITEM_PICKUP_R   = 1.4;   // metres to pick up item
 const SWORD_KNOCKBACK       = 38;
 const GLOVE_KNOCKBACK       = 70;
