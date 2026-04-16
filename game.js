@@ -1574,7 +1574,13 @@ function loop(now) {
         const flash = Math.sin(t.timer * 14) > 0;
         if (flash) t.mesh.material.color.set(0xff4400);
         else t.mesh.material.color.copy(t.solidColor);
-        if (t.timer <= 0) { t.state = 'sinking'; t.timer = TILE_SINK_S; t.mesh.material.color.set(0x220800); }
+        if (t.timer <= 0) {
+          t.state = 'sinking'; t.timer = TILE_SINK_S; t.mesh.material.color.set(0x220800);
+          // Drop the player if they're standing on this tile
+          if (onGround && getTileAt(playerGroup.position.x, playerGroup.position.z) === t) {
+            onGround = false;
+          }
+        }
       } else if (t.state === 'sinking') {
         t.timer -= dt;
         t.mesh.position.y = -2 - (1 - t.timer / TILE_SINK_S) * 6;
