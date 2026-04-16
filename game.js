@@ -209,14 +209,24 @@ function shuffleTiles(seed) {
   return arr;
 }
 
-function isTileGone(x, z) {
+// Returns the tile object whose footprint contains (x, z), or null.
+function getTileAt(x, z) {
+  const half = tileSize / 2;
   for (const t of tileObjects) {
-    if (t.state === 'gone') {
-      const half = tileSize / 2;
-      if (x >= t.cx - half && x <= t.cx + half && z >= t.cz - half && z <= t.cz + half) return true;
-    }
+    if (x >= t.cx - half && x <= t.cx + half && z >= t.cz - half && z <= t.cz + half) return t;
   }
-  return false;
+  return null;
+}
+
+function isTileGone(x, z) {
+  const t = getTileAt(x, z);
+  return t !== null && t.state === 'gone';
+}
+
+// Returns true once a tile is no longer safe to stand/place things on.
+function isTileUnstable(x, z) {
+  const t = getTileAt(x, z);
+  return t !== null && (t.state === 'sinking' || t.state === 'gone');
 }
 
 // ------------------------------------------------------------------
@@ -566,19 +576,19 @@ const SWORD_DURABILITY  = 10;
 const SHIELD_DURABILITY = 7;
 const durabilityEl = document.getElementById('durability');
 
-// Safe random positions on platform (away from edges and pillars)
+// Safe random positions on platform (away from edges, pillars, and gone/unstable tiles).
+// Returns null if no valid position found.
 function randomChestPos() {
   const margin = 3;
-  for (let tries = 0; tries < 30; tries++) {
+  for (let tries = 0; tries < 40; tries++) {
     const x = (Math.random() * 2 - 1) * (PLATFORM_HALF - margin);
     const z = (Math.random() * 2 - 1) * (PLATFORM_HALF - margin);
-    // avoid pillars
-    const tooClose = pillarData.some(p => Math.hypot(x - p.x, z - p.z) < 2.5);
-    // avoid existing chests
-    const overlap  = activeChests.some(c => Math.hypot(x - c.x, z - c.z) < 3);
-    if (!tooClose && !overlap) return { x, z };
+    const tooClose  = pillarData.some(p => Math.hypot(x - p.x, z - p.z) < 2.5);
+    const overlap   = activeChests.some(c => Math.hypot(x - c.x, z - c.z) < 3);
+    const badTile   = isTileUnstable(x, z) || isTileGone(x, z);
+    if (!tooClose && !overlap && !badTile) return { x, z };
   }
-  return { x: 0, z: 8 }; // fallback
+  return null; // no valid spot (most tiles gone)
 }
 
 function makeChest(x, z) {
@@ -1638,12 +1648,18 @@ function loop(now) {
   // --- Chest spawning + open animation ---
   if (gameState === 'playing' && !isDead && !isGhost && Date.now() >= chestTimer && activeChests.length < MAX_CHESTS) {
     chestTimer = Date.now() + CHEST_INTERVAL;
-    const { x, z } = randomChestPos();
-    activeChests.push(makeChest(x, z));
+    const pos = randomChestPos();
+    if (pos) activeChests.push(makeChest(pos.x, pos.z));
   }
 
   for (let i = activeChests.length - 1; i >= 0; i--) {
     const ch = activeChests[i];
+    // Remove chest if its tile has become unstable or gone
+    if (isTileUnstable(ch.x, ch.z)) {
+      scene.remove(ch.group);
+      activeChests.splice(i, 1);
+      continue;
+    }
     if (ch.opened) {
       // Animate lid opening
       const targetRot = -Math.PI * 0.75;
@@ -1660,8 +1676,14 @@ function loop(now) {
     }
   }
 
-  // --- Ground item bobbing ---
-  for (const it of groundItems) {
+  // --- Ground item bobbing + tile removal ---
+  for (let i = groundItems.length - 1; i >= 0; i--) {
+    const it = groundItems[i];
+    if (isTileUnstable(it.x, it.z)) {
+      scene.remove(it.group);
+      groundItems.splice(i, 1);
+      continue;
+    }
     it.group.position.y = 0.1 + Math.sin(time * 2.5 + it.x) * 0.08;
     it.group.rotation.y += dt * 1.2;
   }
