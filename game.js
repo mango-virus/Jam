@@ -199,7 +199,7 @@ function makeCharacter(hexColor) {
   // Sword (shown in right hand when equipped)
   const swordGroup = new THREE.Group();
   swordGroup.position.set(0, -0.55, 0.12);
-  swordGroup.rotation.x = -Math.PI / 2;
+  swordGroup.rotation.x = Math.PI / 2;
   swordGroup.visible = false;
   const sBlade = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.5, 0.05),
     new THREE.MeshStandardMaterial({ color: 0xd0d8e8, metalness: 0.9, roughness: 0.15 }));
@@ -883,7 +883,13 @@ function loop(now) {
   const swing = isMoving ? Math.sin(time * swingSpeed) * 0.5 : 0;
   leftLeg.rotation.x  =  swing;
   rightLeg.rotation.x = -swing;
-  leftArm.rotation.x  = -swing * 0.6;
+
+  // Shield raise animation — smoothly lifts arm into guard position
+  const shieldBlocking = equippedItem === 'shield' && isBlocking;
+  const targetLeftX = shieldBlocking ? -1.5 : -swing * 0.6;
+  const targetLeftZ = shieldBlocking ?  0.05 :  0.15;
+  leftArm.rotation.x += (targetLeftX - leftArm.rotation.x) * Math.min(1, dt * 14);
+  leftArm.rotation.z += (targetLeftZ - leftArm.rotation.z) * Math.min(1, dt * 14);
 
   // Punch animation overrides right arm
   if (punchTimer > 0) {
