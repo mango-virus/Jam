@@ -165,6 +165,62 @@ for (const d of EP_DEFS) {
 }
 
 // ------------------------------------------------------------------
+// Tile system — platform slowly breaks apart during a match
+// ------------------------------------------------------------------
+
+const TILE_COLS        = 6;
+const TILE_ROWS        = 6;
+const TILE_TOTAL       = TILE_COLS * TILE_ROWS;
+const TILE_GRACE_S     = 25;   // seconds before first tile drops
+const TILE_INTERVAL    = 10;   // seconds between tile drop events
+const TILE_WARN_S      = 3.5;  // warning flash duration
+const TILE_SINK_S      = 1.8;  // sinking animation duration
+
+const tileSize   = (PLATFORM_HALF * 2) / TILE_COLS;  // ~8 units
+const tileObjects = []; // { mesh, col, row, state:'solid'|'warning'|'sinking'|'gone', timer }
+
+const tileMat = new THREE.MeshStandardMaterial({ color: 0x3d2060, roughness: 0.85, metalness: 0.1 });
+
+for (let row = 0; row < TILE_ROWS; row++) {
+  for (let col = 0; col < TILE_COLS; col++) {
+    const tx = -PLATFORM_HALF + tileSize * (col + 0.5);
+    const tz = -PLATFORM_HALF + tileSize * (row + 0.5);
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(tileSize - 0.12, 4.05, tileSize - 0.12),
+      tileMat.clone()
+    );
+    mesh.position.set(tx, -2, tz);
+    mesh.receiveShadow = true;
+    mesh.castShadow    = false;
+    mesh.visible       = false; // hidden until game starts
+    scene.add(mesh);
+    tileObjects.push({ mesh, col, row, cx: tx, cz: tz, state: 'solid', timer: 0 });
+  }
+}
+
+// Shuffles tile indices using seeded LCG
+function shuffleTiles(seed) {
+  let s = seed >>> 0;
+  function lr() { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 0x100000000; }
+  const arr = Array.from({ length: TILE_TOTAL }, (_, i) => i);
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(lr() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function isTileGone(x, z) {
+  for (const t of tileObjects) {
+    if (t.state === 'gone') {
+      const half = tileSize / 2;
+      if (x >= t.cx - half && x <= t.cx + half && z >= t.cz - half && z <= t.cz + half) return true;
+    }
+  }
+  return false;
+}
+
+// ------------------------------------------------------------------
 // Character factory — shared by local player and every peer
 // ------------------------------------------------------------------
 
@@ -345,19 +401,57 @@ function makeCharacter(hexColor) {
     badge.position.set(0, 1.55, 0.24); group.add(badge);
   }
 
+  // Ghost aura — large translucent blue sphere, hidden by default
+  const ghostAura = new THREE.Mesh(
+    new THREE.SphereGeometry(0.85, 12, 8),
+    new THREE.MeshStandardMaterial({ color: 0x44aaff, transparent: true, opacity: 0.18, side: THREE.FrontSide, depthWrite: false })
+  );
+  ghostAura.position.y = 0.7;
+  ghostAura.visible = false;
+  group.add(ghostAura);
+
+  // Armor group — chest plate, shoulder pads, helmet visor, hidden by default
+  const armorGroup = new THREE.Group();
+  const armorMat = new THREE.MeshStandardMaterial({ color: 0xb8c8d8, metalness: 0.85, roughness: 0.18 });
+  // Chest plate
+  const chestPlate = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.5, 0.12), armorMat);
+  chestPlate.position.set(0, 0.68, 0.2);
+  armorGroup.add(chestPlate);
+  // Left shoulder pad
+  const lShoulder = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.18, 0.22), armorMat);
+  lShoulder.position.set(-0.38, 0.95, 0);
+  armorGroup.add(lShoulder);
+  // Right shoulder pad
+  const rShoulder = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.18, 0.22), armorMat);
+  rShoulder.position.set(0.38, 0.95, 0);
+  armorGroup.add(rShoulder);
+  // Helmet visor
+  const visor = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.14, 0.08),
+    new THREE.MeshStandardMaterial({ color: 0x4488ff, metalness: 0.9, roughness: 0.1, transparent: true, opacity: 0.75 }));
+  visor.position.set(0, 1.19, 0.21);
+  armorGroup.add(visor);
+  // Helmet top
+  const helmet = new THREE.Mesh(new THREE.BoxGeometry(0.40, 0.18, 0.40), armorMat);
+  helmet.position.set(0, 1.32, 0);
+  armorGroup.add(helmet);
+  armorGroup.visible = false;
+  group.add(armorGroup);
+
   // Per-character glow
   const charGlow = new THREE.PointLight(color, 1.5, 3);
   charGlow.position.y = 0.8;
   group.add(charGlow);
 
-  return { group, leftArm, rightArm, leftLeg, rightLeg, swordGroup, shieldEquip, shieldEmblem };
+  return { group, leftArm, rightArm, leftLeg, rightLeg, swordGroup, shieldEquip, shieldEmblem, armorGroup, ghostAura };
 }
 
 // ------------------------------------------------------------------
 // Local player
 // ------------------------------------------------------------------
 
-const { group: playerGroup, leftArm, rightArm, leftLeg, rightLeg, swordGroup: playerSword, shieldEquip: playerShield, shieldEmblem: playerShieldEmblem } = makeCharacter('#' + incoming.color);
+const { group: playerGroup, leftArm, rightArm, leftLeg, rightLeg,
+        swordGroup: playerSword, shieldEquip: playerShield, shieldEmblem: playerShieldEmblem,
+        armorGroup: playerArmorGroup, ghostAura: playerGhostAura } = makeCharacter('#' + incoming.color);
 scene.add(playerGroup);
 
 // ------------------------------------------------------------------
@@ -608,9 +702,10 @@ scene.add(lobbyLabel);
 
 const peers = new Map();
 const peerCountEl = document.getElementById('peers');
-let sendState = null;
-let room = null;
-let isMoving = false;
+let sendState     = null;
+let sendGameEvent = null;
+let room          = null;
+let isMoving      = false;
 
 function setPeerStatus(text, isError = false) {
   if (!peerCountEl) return;
@@ -636,6 +731,10 @@ function broadcastSelf() {
     shield:   hasShield,
     punching: punchTimer > 0,
     blocking: hasShield && isBlocking,
+    lives:    localLives,
+    isGhost,
+    ready:    localReady,
+    hasArmor,
   });
 }
 
@@ -668,7 +767,8 @@ function addPeer(id, data) {
   char.group.position.set(data.x ?? 0, 0, data.z ?? 0);
   char.group.rotation.y = data.rotY ?? 0;
   scene.add(char.group);
-  peers.set(id, { ...char, tx: data.x ?? 0, ty: data.y ?? 0, tz: data.z ?? 0, rotY: data.rotY ?? 0, moving: false, swing: 0, punchTimer: 0, blocking: false, username: data.username, redrawLabel, pSword: !!data.sword, pShield: !!data.shield });
+  peers.set(id, { ...char, tx: data.x ?? 0, ty: data.y ?? 0, tz: data.z ?? 0, rotY: data.rotY ?? 0, moving: false, swing: 0, punchTimer: 0, blocking: false, username: data.username, redrawLabel, pSword: !!data.sword, pShield: !!data.shield, pColor: data.color || 'ffffff', lives: data.lives ?? 3, isGhost: !!data.isGhost, hasArmor: !!data.hasArmor, ready: !!data.ready });
+  updateMenuReadyList();
 }
 
 function applyPeerEquip(peer, sword, shield) {
@@ -678,9 +778,26 @@ function applyPeerEquip(peer, sword, shield) {
   if (peer.shieldEquip) peer.shieldEquip.visible  = !!shield;
 }
 
+function applyPeerGhostMode(peer, ghost) {
+  peer.isGhost = ghost;
+  peer.group.traverse(obj => {
+    if (obj.isMesh && obj.material) {
+      if (ghost) {
+        obj.material.transparent = true;
+        obj.material.opacity = 0.38;
+      } else {
+        obj.material.transparent = false;
+        obj.material.opacity = 1;
+      }
+    }
+  });
+  if (peer.ghostAura) peer.ghostAura.visible = ghost;
+}
+
 function removePeer(id) {
   const peer = peers.get(id);
   if (peer) { scene.remove(peer.group); peers.delete(id); }
+  updateMenuReadyList();
 }
 
 async function loadTrystero() {
@@ -715,17 +832,35 @@ async function setupMultiplayer() {
     sendState = send;
     const [sPunch, onPunch] = room.makeAction('punch');
     sendPunch = sPunch;
-    onPunch(({ kx, kz, force }) => {
-      if (isBlocking && hasShield) {
+    onPunch(({ kx, kz, force, ghostPunch }, fromPeerId) => {
+      if (isGhost && !ghostPunch) return; // normal punches don't affect ghosts
+      if (!isGhost && ghostPunch === true && isDead) return; // already dying
+      if (isBlocking && hasShield && !ghostPunch) {
         shieldDurability--;
         if (shieldDurability <= 0) breakShield(); else updateDurabilityHUD();
         return;
       }
+      lastHitBy = fromPeerId;
+      lastHitByWasGhost = !!ghostPunch;
       const kb = force ?? KNOCKBACK_H;
       velX = kx * kb;
       velZ = kz * kb;
-      velY = Math.max(velY, KNOCKBACK_UP);
+      velY = Math.max(velY, ghostPunch ? GHOST_KNOCKBACK_UP : KNOCKBACK_UP);
       onGround = false;
+    });
+
+    const [sGame, onGame] = room.makeAction('game');
+    sendGameEvent = sGame;
+    onGame((data, fromPeerId) => {
+      if (data.type === 'start') {
+        startGame(data.seed, false);
+      } else if (data.type === 'ghost_kill') {
+        // Someone's ghost knocked us off and wants us revived
+        reviveAsGhost();
+      } else if (data.type === 'ready') {
+        const peer = peers.get(fromPeerId);
+        if (peer) { peer.ready = !!data.ready; updateMenuReadyList(); }
+      }
     });
 
     room.onPeerJoin(() => { broadcastSelf(); refreshPeerCount(); });
@@ -749,6 +884,11 @@ async function setupMultiplayer() {
           applyPeerEquip(peer, !!data.sword, !!data.shield);
         if (data.punching && peer.punchTimer <= 0) peer.punchTimer = 0.35;
         peer.blocking = !!data.blocking;
+        if (!!data.isGhost !== peer.isGhost) applyPeerGhostMode(peer, !!data.isGhost);
+        peer.lives    = data.lives ?? peer.lives;
+        peer.hasArmor = !!data.hasArmor;
+        if (peer.armorGroup) peer.armorGroup.visible = !!data.hasArmor && !data.isGhost;
+        if (data.ready !== undefined) { peer.ready = !!data.ready; updateMenuReadyList(); }
       }
       refreshPeerCount();
     });
@@ -776,7 +916,9 @@ let pitch = 0.2;
 let isLocked = false;
 let redirecting = false;
 
-renderer.domElement.addEventListener('click', () => renderer.domElement.requestPointerLock());
+renderer.domElement.addEventListener('click', () => {
+  if (gameState === 'playing') renderer.domElement.requestPointerLock();
+});
 
 document.addEventListener('pointerlockchange', () => {
   isLocked = document.pointerLockElement === renderer.domElement;
@@ -882,6 +1024,33 @@ let deathTimer  = 0;
 let punchTimer  = 0; // >0 while punch animation playing
 let sendPunch   = null;
 
+// --- Game mode state ---
+let gameState          = 'lobby';   // 'lobby' | 'playing' | 'gameover'
+let localLives         = 3;
+let isGhost            = false;
+let ghostPunchCooldown = 0;
+let lastHitBy          = null;      // peer id who last punched us
+let lastHitByWasGhost  = false;
+let hasArmor           = localStorage.getItem('arenaHasArmor') === '1';
+let localReady         = false;
+let tileOrder          = [];        // shuffled tile indices
+let tileDropIndex      = 0;         // next tile to warn
+let nextTileTime       = 0;         // game-time when next tile event fires
+let gameOverTimer      = 0;
+
+const GHOST_KNOCKBACK_H  = 55;
+const GHOST_KNOCKBACK_UP = 16;
+const GHOST_PUNCH_CD     = 7.0;  // seconds
+const GHOST_SPEED        = 7;
+const SPAWN_X = -2, SPAWN_Y = 3.2, SPAWN_Z = 2;
+
+const livesHudEl = document.getElementById('lives-hud');
+const menuEl     = document.getElementById('menu');
+const gameOverEl = document.getElementById('game-over');
+const readyListEl = document.getElementById('ready-list');
+const btnReady   = document.getElementById('btn-ready');
+const btnStart   = document.getElementById('btn-start');
+
 const deathEl = document.getElementById('death-msg');
 
 function onPlatform(x, z) {
@@ -891,8 +1060,8 @@ function onPlatform(x, z) {
 // Returns the highest surface Y under (x, z), or null if nothing below.
 function getSurfaceBelow(x, z) {
   let best = null;
-  // Main platform
-  if (onPlatform(x, z)) best = 0;
+  // Main platform (only if tile hasn't fallen)
+  if (onPlatform(x, z) && !isTileGone(x, z)) best = 0;
   // Elevated platforms (AABB)
   for (const ep of elevatedPlatforms) {
     if (x >= ep.x - ep.hw && x <= ep.x + ep.hw && z >= ep.z - ep.hd && z <= ep.z + ep.hd) {
@@ -918,26 +1087,214 @@ function circleOverlap(px, pz, cx, cz, r) {
   return { nx: dx * push, nz: dz * push };
 }
 
+function updateLivesHUD() {
+  if (!livesHudEl) return;
+  if (gameState !== 'playing') { livesHudEl.textContent = ''; return; }
+  if (isGhost) {
+    livesHudEl.innerHTML = '<span style="color:#44aaff;text-shadow:0 0 8px #44aaff">👻 GHOST</span>';
+    return;
+  }
+  const hearts = '❤️'.repeat(localLives) + '🖤'.repeat(Math.max(0, 3 - localLives + (hasArmor ? 1 : 0)));
+  livesHudEl.textContent = hearts;
+}
+
+function enterGhostMode() {
+  isGhost = true;
+  isDead  = false;
+  // Drop items
+  hasSword = false; swordDurability = 0; playerSword.visible = false;
+  hasShield = false; shieldDurability = 0; playerShield.visible = false;
+  updateDurabilityHUD();
+  // Remove armor
+  hasArmor = false;
+  localStorage.removeItem('arenaHasArmor');
+  playerArmorGroup.visible = false;
+  // Visual: make player semi-transparent, show ghost aura
+  playerGroup.traverse(obj => {
+    if (obj.isMesh && obj.material) {
+      obj.material.transparent = true;
+      obj.material.opacity = 0.38;
+    }
+  });
+  playerGhostAura.visible = true;
+  ghostPunchCooldown = 0;
+  velY = 0; velX = 0; velZ = 0;
+  if (deathEl) deathEl.style.display = 'none';
+  updateLivesHUD();
+}
+
+function exitGhostMode() {
+  isGhost = false;
+  playerGroup.traverse(obj => {
+    if (obj.isMesh && obj.material) {
+      obj.material.transparent = false;
+      obj.material.opacity = 1;
+    }
+  });
+  playerGhostAura.visible = false;
+  updateLivesHUD();
+}
+
+// Called when a ghost killed us — respawn with 1 life
+function reviveAsGhost() {
+  if (!isGhost) return; // only ghosts can be revived this way
+  exitGhostMode();
+  localLives = 1;
+  playerGroup.position.set(SPAWN_X, SPAWN_Y, SPAWN_Z);
+  velY = 0; velX = 0; velZ = 0;
+  onGround = false;
+  isDead = false;
+  if (deathEl) deathEl.style.display = 'none';
+  updateLivesHUD();
+}
+
 function die() {
-  if (isDead) return;
+  if (isDead || isGhost) return;
   isDead = true;
   deathTimer = 2.0;
   velY = 0;
+  if (gameState === 'playing') {
+    // Notify ghost who killed us so they can revive
+    if (lastHitByWasGhost && lastHitBy) {
+      sendGameEvent?.({ type: 'ghost_kill' }, lastHitBy);
+      lastHitBy = null; lastHitByWasGhost = false;
+    }
+    localLives--;
+    if (hasArmor && localLives < 0) { hasArmor = false; localStorage.removeItem('arenaHasArmor'); playerArmorGroup.visible = false; localLives = 0; }
+    updateLivesHUD();
+  }
   if (deathEl) deathEl.style.display = 'flex';
 }
 
 function respawn() {
   isDead = false;
-  playerGroup.position.set(0, 1, 0);
+  if (gameState === 'playing' && localLives <= 0) {
+    enterGhostMode();
+    playerGroup.position.set(SPAWN_X, SPAWN_Y + 3, SPAWN_Z);
+    return;
+  }
+  if (gameState === 'playing') {
+    playerGroup.position.set(SPAWN_X, SPAWN_Y, SPAWN_Z);
+  } else {
+    playerGroup.position.set(0, 1, 0);
+  }
   velY = 0; velX = 0; velZ = 0;
   onGround = false;
   if (deathEl) deathEl.style.display = 'none';
 }
 
+function checkWinCondition() {
+  if (gameState !== 'playing') return;
+  // Count alive (non-ghost) players including self
+  let aliveCount = isGhost ? 0 : 1;
+  let aliveNames = isGhost ? [] : [incoming.username];
+  for (const peer of peers.values()) {
+    if (!peer.isGhost) { aliveCount++; aliveNames.push(peer.username || '?'); }
+  }
+  if (peers.size === 0) return; // need at least 2 to win
+  if (aliveCount <= 1) {
+    const winner = aliveNames[0] || incoming.username;
+    winGame(winner, winner === incoming.username);
+  }
+}
+
+function winGame(winnerName, isLocal) {
+  gameState = 'gameover';
+  gameOverTimer = 6;
+  if (isLocal) {
+    localStorage.setItem('arenaHasArmor', '1');
+  }
+  // Show overlay
+  if (gameOverEl) {
+    document.getElementById('game-over-winner').textContent = `🏆 ${winnerName} wins!`;
+    gameOverEl.classList.add('active');
+  }
+  updateLivesHUD();
+}
+
+function returnToLobby() {
+  gameState  = 'lobby';
+  localLives = 3 + (hasArmor ? 1 : 0);
+  isGhost    = false;
+  localReady = false;
+  isDead     = false;
+  // Restore player appearance
+  exitGhostMode();
+  hasArmor = localStorage.getItem('arenaHasArmor') === '1';
+  playerArmorGroup.visible = hasArmor;
+  // Reset tiles and restore platform
+  for (const t of tileObjects) { t.state = 'solid'; t.timer = 0; t.mesh.visible = false; t.mesh.position.y = -2; t.mesh.material.color.set(0x3d2060); }
+  tileDropIndex = 0;
+  gameTime = 0;
+  platform.visible = true;
+  // Move player to lobby
+  playerGroup.position.set(0, 1, 0);
+  velY = 0; velX = 0; velZ = 0;
+  onGround = false;
+  if (deathEl) deathEl.style.display = 'none';
+  if (gameOverEl) gameOverEl.classList.remove('active');
+  // Show menu
+  if (menuEl) menuEl.classList.add('active');
+  document.exitPointerLock();
+  updateLivesHUD();
+  updateMenuReadyList();
+}
+
+function startGame(seed, broadcast) {
+  gameState  = 'playing';
+  localLives = 3 + (hasArmor ? 1 : 0);
+  isGhost    = false;
+  isDead     = false;
+  ghostPunchCooldown = 0;
+  lastHitBy  = null;
+  // Tile setup
+  gameTime       = 0;
+  tileOrder      = shuffleTiles(seed);
+  tileDropIndex  = 0;
+  nextTileTime   = TILE_GRACE_S;
+  // Show tiles
+  for (const t of tileObjects) { t.state = 'solid'; t.timer = 0; t.mesh.visible = true; t.mesh.position.y = -2; t.mesh.material.color.set(0x3d2060); }
+  // Hide main platform mesh so tiles take over visually
+  platform.visible = false;
+  // Spawn player on center pillar
+  playerGroup.position.set(SPAWN_X, SPAWN_Y, SPAWN_Z);
+  velY = 0; velX = 0; velZ = 0;
+  onGround = false;
+  playerArmorGroup.visible = hasArmor;
+  if (menuEl) menuEl.classList.remove('active');
+  if (deathEl) deathEl.style.display = 'none';
+  if (broadcast) {
+    sendGameEvent?.({ type: 'start', seed });
+  }
+  updateLivesHUD();
+  // Capture pointer
+  renderer.domElement.requestPointerLock();
+  // game time for tile tracking is handled via gameTime variable in loop
+}
+
 function doPunch() {
+  // Ghost punch
+  if (isGhost) {
+    if (ghostPunchCooldown > 0) return;
+    ghostPunchCooldown = GHOST_PUNCH_CD;
+    const px = playerGroup.position.x, py = playerGroup.position.y, pz = playerGroup.position.z;
+    let nearest = null, nearestDist = PUNCH_RANGE * 1.5;
+    for (const [id, peer] of peers) {
+      if (peer.isGhost) continue; // ghosts can only punch alive
+      const dx = peer.group.position.x - px, dy = peer.group.position.y - py, dz = peer.group.position.z - pz;
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (dist < nearestDist) { nearest = { id, dx, dy, dz, dist }; nearestDist = dist; }
+    }
+    if (nearest && sendPunch) {
+      const { id, dx, dz, dist } = nearest;
+      sendPunch({ kx: dx / dist, kz: dz / dist, force: GHOST_KNOCKBACK_H, ghostPunch: true }, id);
+    }
+    return;
+  }
+
   if (punchTimer > 0 || isDead) return;
   punchTimer = 0.35;
-  broadcastSelf(); // immediately notify peers of punch
+  broadcastSelf();
 
   const px = playerGroup.position.x;
   const py = playerGroup.position.y;
@@ -945,6 +1302,7 @@ function doPunch() {
   let nearest = null, nearestDist = PUNCH_RANGE;
 
   for (const [id, peer] of peers) {
+    if (peer.isGhost) continue; // can't punch ghosts normally
     const dx = peer.group.position.x - px;
     const dy = peer.group.position.y - py;
     const dz = peer.group.position.z - pz;
@@ -956,7 +1314,6 @@ function doPunch() {
     const { id, dx, dz, dist } = nearest;
     const force = hasSword ? SWORD_KNOCKBACK : KNOCKBACK_H;
     sendPunch({ kx: dx / dist, kz: dz / dist, force }, id);
-    // Sword loses 1 durability per hit
     if (hasSword) {
       swordDurability--;
       if (swordDurability <= 0) breakSword(); else updateDurabilityHUD();
@@ -972,6 +1329,7 @@ const _euler  = new THREE.Euler(0, 0, 0, 'YXZ');
 
 let prev = performance.now();
 let time = 0;
+let gameTime = 0;  // elapsed seconds within the current match
 let lastBroadcast = 0;
 
 function loop(now) {
@@ -979,6 +1337,45 @@ function loop(now) {
   const dt = Math.min((now - prev) / 1000, 0.05);
   prev = now;
   time += dt;
+
+  // --- Game timers ---
+  if (gameState === 'playing') {
+    gameTime += dt;
+    // Tile drop scheduling
+    if (tileDropIndex < TILE_TOTAL && gameTime >= nextTileTime) {
+      const idx = tileOrder[tileDropIndex];
+      const tile = tileObjects[idx];
+      if (tile && tile.state === 'solid') {
+        tile.state = 'warning';
+        tile.timer = TILE_WARN_S;
+      }
+      tileDropIndex++;
+      nextTileTime = gameTime + TILE_INTERVAL;
+    }
+    // Tile state machine
+    for (const t of tileObjects) {
+      if (t.state === 'warning') {
+        t.timer -= dt;
+        // Flash the tile
+        const flash = Math.sin(t.timer * 14) > 0;
+        t.mesh.material.color.set(flash ? 0xff4400 : 0x3d2060);
+        if (t.timer <= 0) { t.state = 'sinking'; t.timer = TILE_SINK_S; t.mesh.material.color.set(0x220800); }
+      } else if (t.state === 'sinking') {
+        t.timer -= dt;
+        t.mesh.position.y = -2 - (1 - t.timer / TILE_SINK_S) * 6;
+        if (t.timer <= 0) { t.state = 'gone'; t.mesh.visible = false; }
+      }
+    }
+    // Ghost punch cooldown
+    if (isGhost && ghostPunchCooldown > 0) ghostPunchCooldown -= dt;
+    // Game over timer
+    if (gameOverTimer > 0) {
+      gameOverTimer -= dt;
+      if (gameOverTimer <= 0) returnToLobby();
+    }
+    // Win condition check (every ~0.5s)
+    if (Math.floor(gameTime * 2) !== Math.floor((gameTime - dt) * 2)) checkWinCondition();
+  }
 
   // --- Movement ---
   _euler.set(0, yaw, 0);
@@ -994,25 +1391,50 @@ function loop(now) {
     if (deathTimer <= 0) respawn();
   }
 
-  isMoving = _dir.lengthSq() > 0 && !isDead;
-  const isSprinting = keys['shift'];
+  // Ghost flight mode
+  if (isGhost) {
+    isMoving = _dir.lengthSq() > 0;
+    if (isMoving) {
+      _dir.normalize().applyEuler(_euler);
+      playerGroup.position.x += _dir.x * GHOST_SPEED * dt;
+      playerGroup.position.z += _dir.z * GHOST_SPEED * dt;
+      playerGroup.rotation.y = Math.atan2(_dir.x, _dir.z);
+    }
+    if (keys[' '])     playerGroup.position.y += GHOST_SPEED * dt;
+    if (keys['shift']) playerGroup.position.y -= GHOST_SPEED * dt;
+    // Pulsate ghost aura
+    playerGhostAura.scale.setScalar(1 + 0.08 * Math.sin(time * 3.5));
+    // Ghost punch indicator
+    const hint = document.getElementById('hint');
+    if (hint && isLocked) {
+      const cd = ghostPunchCooldown;
+      hint.textContent = cd > 0 ? `👻 Ghost punch ready in ${cd.toFixed(1)}s` : '👻 LMB — Ghost Punch (big knockback)';
+    }
+  } else {
+    isMoving = _dir.lengthSq() > 0 && !isDead;
+  }
+
+  const isSprinting = keys['shift'] && !isGhost;
   const speed = SPEED * (isSprinting ? SPRINT_MULT : 1);
 
-  if (isMoving) {
+  if (isMoving && !isGhost) {
     _dir.normalize().applyEuler(_euler);
     playerGroup.position.x += _dir.x * speed * dt;
     playerGroup.position.z += _dir.z * speed * dt;
     playerGroup.rotation.y  = Math.atan2(_dir.x, _dir.z);
   }
 
+  if (!isGhost) {
   // Knockback — exponential decay
   const decay = Math.exp(-PUNCH_DECAY * dt);
   velX *= decay;
   velZ *= decay;
   playerGroup.position.x += velX * dt;
   playerGroup.position.z += velZ * dt;
+  }
 
-  // --- Collision resolution ---
+  // --- Collision resolution (skip for ghosts) ---
+  if (!isGhost) {
   const PLAYER_R = 0.32;
 
   // vs pillars — climb if top is within reach, otherwise push out
@@ -1121,6 +1543,8 @@ function loop(now) {
   // Fell too far
   if (playerGroup.position.y < FALL_DEATH_Y) die();
 
+  } // end !isGhost physics block
+
   // Local limb swing — faster when sprinting
   const swingSpeed = isSprinting ? 13 : 8;
   const swing = isMoving ? Math.sin(time * swingSpeed) * 0.5 : 0;
@@ -1155,7 +1579,7 @@ function loop(now) {
   camera.lookAt(playerGroup.position.x, lookY, playerGroup.position.z);
 
   // --- Chest spawning + open animation ---
-  if (!isDead && Date.now() >= chestTimer && activeChests.length < MAX_CHESTS) {
+  if (gameState === 'playing' && !isDead && !isGhost && Date.now() >= chestTimer && activeChests.length < MAX_CHESTS) {
     chestTimer = Date.now() + CHEST_INTERVAL;
     const { x, z } = randomChestPos();
     activeChests.push(makeChest(x, z));
@@ -1271,5 +1695,51 @@ function loop(now) {
 
   renderer.render(scene, camera);
 }
+
+// ------------------------------------------------------------------
+// Menu setup
+// ------------------------------------------------------------------
+
+function updateMenuReadyList() {
+  if (!readyListEl) return;
+  readyListEl.innerHTML = '';
+  // Local player
+  const localEntry = document.createElement('div');
+  localEntry.className = 'ready-entry';
+  localEntry.innerHTML = `<span class="ready-dot ${localReady ? 'is-ready' : ''}"></span><span style="color:#${incoming.color}">${incoming.username}</span>`;
+  readyListEl.appendChild(localEntry);
+  // Peers
+  for (const peer of peers.values()) {
+    const e = document.createElement('div');
+    e.className = 'ready-entry';
+    e.innerHTML = `<span class="ready-dot ${peer.ready ? 'is-ready' : ''}"></span><span style="color:#${peer.pColor || 'ffffff'}">${peer.username || '?'}</span>`;
+    readyListEl.appendChild(e);
+  }
+  // Enable start button if local player is ready
+  if (btnStart) btnStart.disabled = !localReady;
+}
+
+if (btnReady) {
+  btnReady.addEventListener('click', () => {
+    localReady = !localReady;
+    btnReady.textContent = localReady ? 'Cancel Ready' : 'Ready Up';
+    btnReady.classList.toggle('is-ready', localReady);
+    sendGameEvent?.({ type: 'ready', ready: localReady });
+    updateMenuReadyList();
+  });
+}
+
+if (btnStart) {
+  btnStart.addEventListener('click', () => {
+    if (!localReady) return;
+    const seed = Date.now() & 0xffffffff;
+    startGame(seed, true);
+  });
+}
+
+// Show lobby menu on load
+if (menuEl) menuEl.classList.add('active');
+hasArmor = localStorage.getItem('arenaHasArmor') === '1';
+playerArmorGroup.visible = false; // hidden in lobby
 
 loop(performance.now());

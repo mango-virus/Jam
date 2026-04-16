@@ -12,10 +12,33 @@
   <div id="peers">1 online</div>
   <div id="hint">Click to capture mouse</div>
   <div id="durability"></div>
+  <div id="lives-hud"></div>
 </div>
 <div id="death-msg">
   <span>YOU FELL</span>
   <small>respawning…</small>
+</div>
+
+<!-- Lobby menu -->
+<div id="menu">
+  <div id="menu-box">
+    <h1 id="menu-title">⚔ Arena Battler</h1>
+    <p id="menu-sub">Knock everyone off the platform. Last one standing wins.</p>
+    <div id="ready-list"></div>
+    <div id="menu-btns">
+      <button id="btn-ready">Ready Up</button>
+      <button id="btn-start" disabled>Start Game</button>
+    </div>
+  </div>
+</div>
+
+<!-- Game over screen -->
+<div id="game-over">
+  <div id="game-over-box">
+    <div id="game-over-title">GAME OVER</div>
+    <div id="game-over-winner"></div>
+    <div id="game-over-sub">Returning to lobby…</div>
+  </div>
 </div>
 <script src="portal.js"></script>
 <script type="module" src="game.js"></script>
