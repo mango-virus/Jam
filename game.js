@@ -230,6 +230,44 @@ function isTileUnstable(x, z) {
 }
 
 // ------------------------------------------------------------------
+// Lightning effect — spawned on a home-run hit
+// ------------------------------------------------------------------
+
+function spawnLightningEffect(x, y, z) {
+  const group = new THREE.Group();
+  group.position.set(x, y + 0.7, z);
+
+  // Bright flash light
+  const light = new THREE.PointLight(0xffffff, 18, 10);
+  group.add(light);
+
+  // Second coloured light for the electric glow
+  const glow = new THREE.PointLight(0x88ffff, 8, 6);
+  group.add(glow);
+
+  // Generate 8 jagged bolt lines radiating outward
+  const boltMat = new THREE.LineBasicMaterial({ color: 0xeeffff });
+  const bolts = [];
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * Math.PI * 2;
+    const pts = [];
+    let cx = 0, cy = 0;
+    pts.push(new THREE.Vector3(0, 0, 0));
+    for (let s = 1; s <= 5; s++) {
+      cx += Math.cos(angle) * 0.28 + (Math.random() - 0.5) * 0.25;
+      cy += (Math.random() - 0.5) * 0.35;
+      pts.push(new THREE.Vector3(cx, cy, (Math.random() - 0.5) * 0.2));
+    }
+    const bolt = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), boltMat);
+    group.add(bolt);
+    bolts.push(bolt);
+  }
+
+  scene.add(group);
+  activeEffects.push({ group, light, glow, bolts, timer: 0.9, maxTimer: 0.9 });
+}
+
+// ------------------------------------------------------------------
 // Character factory — shared by local player and every peer
 // ------------------------------------------------------------------
 
@@ -340,6 +378,40 @@ function makeCharacter(hexColor) {
   strap.position.set(0, 0.19, 0.04);
   gloveGroup.add(strap);
   rightArm.add(gloveGroup);
+
+  // Home run bat (shown in right hand when equipped)
+  const batGroup = new THREE.Group();
+  batGroup.position.set(0, -0.52, 0.10);
+  batGroup.rotation.x = Math.PI / 2;
+  batGroup.visible = false;
+  const batWoodMat = new THREE.MeshStandardMaterial({ color: 0x8b4513, roughness: 0.75, metalness: 0.0 });
+  const batTapeMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 });
+  // Knob at bottom of handle
+  const batKnob = new THREE.Mesh(new THREE.CylinderGeometry(0.040, 0.038, 0.04, 10), batWoodMat);
+  batKnob.position.y = -0.22;
+  batGroup.add(batKnob);
+  // Handle (thin grip)
+  const batHandle = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.030, 0.28, 10), batWoodMat);
+  batHandle.position.y = -0.06;
+  batGroup.add(batHandle);
+  // Grip tape wrap
+  const batTape = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 0.16, 10), batTapeMat);
+  batTape.position.y = -0.10;
+  batGroup.add(batTape);
+  // Taper from handle to barrel
+  const batTaper = new THREE.Mesh(new THREE.CylinderGeometry(0.060, 0.030, 0.12, 10), batWoodMat);
+  batTaper.position.y = 0.14;
+  batGroup.add(batTaper);
+  // Barrel (wide hitting end)
+  const batBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.078, 0.060, 0.22, 12), batWoodMat);
+  batBarrel.position.y = 0.31;
+  batGroup.add(batBarrel);
+  // End cap
+  const batCap = new THREE.Mesh(new THREE.SphereGeometry(0.078, 10, 6), batWoodMat);
+  batCap.scale.y = 0.55;
+  batCap.position.y = 0.42;
+  batGroup.add(batCap);
+  rightArm.add(batGroup);
 
   normalBody.add(rightArm);
 
@@ -523,7 +595,7 @@ function makeCharacter(hexColor) {
   ghostGlow.position.y = 0.9;
   ghostBody.add(ghostGlow);
 
-  return { group, normalBody, ghostBody, leftArm, rightArm, leftLeg, rightLeg, swordGroup, gloveGroup, shieldEquip, shieldEmblem, armorGroup };
+  return { group, normalBody, ghostBody, leftArm, rightArm, leftLeg, rightLeg, swordGroup, gloveGroup, batGroup, shieldEquip, shieldEmblem, armorGroup };
 }
 
 // ------------------------------------------------------------------
@@ -532,7 +604,7 @@ function makeCharacter(hexColor) {
 
 const { group: playerGroup, normalBody: playerNormalBody, ghostBody: playerGhostBody,
         leftArm, rightArm, leftLeg, rightLeg,
-        swordGroup: playerSword, gloveGroup: playerGlove,
+        swordGroup: playerSword, gloveGroup: playerGlove, batGroup: playerBat,
         shieldEquip: playerShield, shieldEmblem: playerShieldEmblem,
         armorGroup: playerArmorGroup } = makeCharacter('#' + incoming.color);
 scene.add(playerGroup);
@@ -545,8 +617,10 @@ scene.add(playerGroup);
 const MAX_ITEMS       = 5;
 const ITEM_INTERVAL   = 10000; // ms between item spawn attempts
 const ITEM_PICKUP_R   = 1.4;   // metres to pick up item
-const SWORD_KNOCKBACK = 38;
-const GLOVE_KNOCKBACK = 70;
+const SWORD_KNOCKBACK       = 38;
+const GLOVE_KNOCKBACK       = 70;
+const BAT_HOME_RUN_KNOCKBACK = 260;
+const BAT_NORMAL_KNOCKBACK  = 8;
 
 let itemTimer  = Date.now() + 5000; // first item after 5s
 const groundItems = []; // { group, type, x, z }
@@ -556,11 +630,17 @@ let hasShield      = false;
 let shieldDurability = 0;
 let hasGlove       = false;
 let gloveDurability  = 0;
+let hasBat         = false;
+let batDurability    = 0;
 let isBlocking     = false;
 
 const SWORD_DURABILITY  = 10;
 const SHIELD_DURABILITY = 7;
 const GLOVE_DURABILITY  = 4;
+const BAT_DURABILITY    = 1;
+
+// Active lightning effects { group, light, bolts, timer, maxTimer }
+const activeEffects = [];
 const durabilityEl = document.getElementById('durability');
 
 // Safe random position on the platform (away from edges, pillars, other items, unstable tiles).
@@ -602,6 +682,17 @@ function makeGroundItem(type, x, z) {
       new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.8 }));
     emblem.position.y = 0.28;
     g.add(emblem);
+  } else if (type === 'bat') {
+    const woodMat = new THREE.MeshStandardMaterial({ color: 0x8b4513, roughness: 0.75 });
+    const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.035, 0.36, 8), woodMat);
+    handle.position.y = 0.22; handle.rotation.z = 0.35;
+    g.add(handle);
+    const taper = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.035, 0.14, 8), woodMat);
+    taper.position.set(0.10, 0.42, 0); taper.rotation.z = 0.35;
+    g.add(taper);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.07, 0.26, 10), woodMat);
+    barrel.position.set(0.18, 0.56, 0); barrel.rotation.z = 0.35;
+    g.add(barrel);
   } else { // glove
     const body = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8),
       new THREE.MeshStandardMaterial({ color: 0xcc2200, roughness: 0.55, metalness: 0.08 }));
@@ -633,6 +724,7 @@ function updateDurabilityHUD() {
   const parts = [];
   if (hasSword)  parts.push(`⚔ ${pipBar(swordDurability,  SWORD_DURABILITY)}`);
   if (hasGlove)  parts.push(`🥊 ${pipBar(gloveDurability,  GLOVE_DURABILITY)}`);
+  if (hasBat)    parts.push(`🏏 ${pipBar(batDurability,    BAT_DURABILITY)}`);
   if (hasShield) parts.push(`🛡 ${pipBar(shieldDurability, SHIELD_DURABILITY)}`);
   durabilityEl.innerHTML = parts.join('&nbsp;&nbsp;');
 }
@@ -644,6 +736,9 @@ function equipItem(type) {
   } else if (type === 'glove') {
     hasGlove = true; gloveDurability = GLOVE_DURABILITY;
     playerGlove.visible = true;
+  } else if (type === 'bat') {
+    hasBat = true; batDurability = BAT_DURABILITY;
+    playerBat.visible = true;
   } else {
     hasShield = true; shieldDurability = SHIELD_DURABILITY;
     playerShield.visible = true;
@@ -663,6 +758,12 @@ function breakGlove() {
   updateDurabilityHUD();
 }
 
+function breakBat() {
+  hasBat = false; batDurability = 0;
+  playerBat.visible = false;
+  updateDurabilityHUD();
+}
+
 function breakShield() {
   hasShield = false; shieldDurability = 0;
   playerShield.visible = false;
@@ -679,6 +780,10 @@ function dropItem() {
   if (hasGlove) {
     groundItems.push(makeGroundItem('glove', px + Math.sin(dropAngle) * 1.2, pz + Math.cos(dropAngle) * 1.2));
     hasGlove = false; gloveDurability = 0; playerGlove.visible = false;
+  }
+  if (hasBat) {
+    groundItems.push(makeGroundItem('bat', px + Math.sin(dropAngle) * 1.2, pz + Math.cos(dropAngle) * 1.2));
+    hasBat = false; batDurability = 0; playerBat.visible = false;
   }
   if (hasShield) {
     groundItems.push(makeGroundItem('shield', px + Math.sin(dropAngle) * 0.6, pz + Math.cos(dropAngle) * 0.6));
@@ -722,6 +827,7 @@ function broadcastSelf() {
     moving:   isMoving,
     sword:    hasSword,
     glove:    hasGlove,
+    bat:      hasBat,
     shield:   hasShield,
     punching: punchTimer > 0,
     blocking: hasShield && isBlocking,
@@ -761,17 +867,19 @@ function addPeer(id, data) {
   char.group.position.set(data.x ?? 0, 0, data.z ?? 0);
   char.group.rotation.y = data.rotY ?? 0;
   scene.add(char.group);
-  peers.set(id, { ...char, tx: data.x ?? 0, ty: data.y ?? 0, tz: data.z ?? 0, rotY: data.rotY ?? 0, moving: false, swing: 0, punchTimer: 0, blocking: false, username: data.username, redrawLabel, pSword: !!data.sword, pGlove: !!data.glove, pShield: !!data.shield, pColor: data.color || 'ffffff', lives: data.lives ?? 3, isGhost: !!data.isGhost, hasArmor: !!data.hasArmor, ready: !!data.ready });
+  peers.set(id, { ...char, tx: data.x ?? 0, ty: data.y ?? 0, tz: data.z ?? 0, rotY: data.rotY ?? 0, moving: false, swing: 0, punchTimer: 0, blocking: false, username: data.username, redrawLabel, pSword: !!data.sword, pGlove: !!data.glove, pBat: !!data.bat, pShield: !!data.shield, pColor: data.color || 'ffffff', lives: data.lives ?? 3, isGhost: !!data.isGhost, hasArmor: !!data.hasArmor, ready: !!data.ready });
   updateMenuReadyList();
 }
 
-function applyPeerEquip(peer, sword, glove, shield) {
+function applyPeerEquip(peer, sword, glove, bat, shield) {
   peer.pSword  = sword;
   peer.pGlove  = glove;
+  peer.pBat    = bat;
   peer.pShield = shield;
-  if (peer.swordGroup)  peer.swordGroup.visible  = !!sword;
-  if (peer.gloveGroup)  peer.gloveGroup.visible  = !!glove;
-  if (peer.shieldEquip) peer.shieldEquip.visible  = !!shield;
+  if (peer.swordGroup)  peer.swordGroup.visible = !!sword;
+  if (peer.gloveGroup)  peer.gloveGroup.visible = !!glove;
+  if (peer.batGroup)    peer.batGroup.visible   = !!bat;
+  if (peer.shieldEquip) peer.shieldEquip.visible = !!shield;
 }
 
 function applyPeerGhostMode(peer, ghost) {
@@ -818,7 +926,7 @@ async function setupMultiplayer() {
     sendState = send;
     const [sPunch, onPunch] = room.makeAction('punch');
     sendPunch = sPunch;
-    onPunch(({ kx, kz, force, ghostPunch }, fromPeerId) => {
+    onPunch(({ kx, kz, force, ghostPunch, homeRun }, fromPeerId) => {
       if (isGhost && !ghostPunch) return; // normal punches don't affect ghosts
       if (!isGhost && ghostPunch === true && isDead) return; // already dying
       if (isBlocking && hasShield && !ghostPunch) {
@@ -833,6 +941,8 @@ async function setupMultiplayer() {
       velZ = kz * kb;
       velY = Math.max(velY, ghostPunch ? GHOST_KNOCKBACK_UP : KNOCKBACK_UP);
       onGround = false;
+      // Lightning effect on the receiver's end for home-run hits
+      if (homeRun) spawnLightningEffect(playerGroup.position.x, playerGroup.position.y, playerGroup.position.z);
     });
 
     const [sGame, onGame] = room.makeAction('game');
@@ -866,8 +976,8 @@ async function setupMultiplayer() {
           peer.username = data.username;
           peer.redrawLabel(data.username || '?');
         }
-        if (!!data.sword !== peer.pSword || !!data.glove !== peer.pGlove || !!data.shield !== peer.pShield)
-          applyPeerEquip(peer, !!data.sword, !!data.glove, !!data.shield);
+        if (!!data.sword !== peer.pSword || !!data.glove !== peer.pGlove || !!data.bat !== peer.pBat || !!data.shield !== peer.pShield)
+          applyPeerEquip(peer, !!data.sword, !!data.glove, !!data.bat, !!data.shield);
         if (data.punching && peer.punchTimer <= 0) peer.punchTimer = 0.35;
         peer.blocking = !!data.blocking;
         if (!!data.isGhost !== peer.isGhost) applyPeerGhostMode(peer, !!data.isGhost);
@@ -941,14 +1051,19 @@ document.addEventListener('keydown', e => {
       if (Math.hypot(px - it.x, pz - it.z) < ITEM_PICKUP_R) {
         // Drop same-slot item first if already held
         const dropAngle = playerGroup.rotation.y + Math.PI;
-        // Sword and glove share the right-hand weapon slot — swap out the current one
-        if ((it.type === 'sword' || it.type === 'glove') && hasSword) {
+        // Sword, glove, and bat all share the right-hand weapon slot — swap out whatever is held
+        const isWeapon = it.type === 'sword' || it.type === 'glove' || it.type === 'bat';
+        if (isWeapon && hasSword) {
           groundItems.push(makeGroundItem('sword', px + Math.sin(dropAngle) * 1.2, pz + Math.cos(dropAngle) * 1.2));
           hasSword = false; swordDurability = 0; playerSword.visible = false;
         }
-        if ((it.type === 'sword' || it.type === 'glove') && hasGlove) {
+        if (isWeapon && hasGlove) {
           groundItems.push(makeGroundItem('glove', px + Math.sin(dropAngle) * 1.2, pz + Math.cos(dropAngle) * 1.2));
           hasGlove = false; gloveDurability = 0; playerGlove.visible = false;
+        }
+        if (isWeapon && hasBat) {
+          groundItems.push(makeGroundItem('bat', px + Math.sin(dropAngle) * 1.2, pz + Math.cos(dropAngle) * 1.2));
+          hasBat = false; batDurability = 0; playerBat.visible = false;
         }
         if (it.type === 'shield' && hasShield) {
           groundItems.push(makeGroundItem('shield', px + Math.sin(dropAngle) * 0.6, pz + Math.cos(dropAngle) * 0.6));
@@ -1079,6 +1194,7 @@ function enterGhostMode() {
   // Drop items
   hasSword = false; swordDurability = 0; playerSword.visible = false;
   hasGlove = false; gloveDurability = 0; playerGlove.visible = false;
+  hasBat   = false; batDurability   = 0; playerBat.visible   = false;
   hasShield = false; shieldDurability = 0; playerShield.visible = false;
   updateDurabilityHUD();
   // Remove armor
@@ -1310,14 +1426,27 @@ function doPunch() {
 
   if (nearest && sendPunch) {
     const { id, dx, dz, dist } = nearest;
-    const force = hasSword ? SWORD_KNOCKBACK : hasGlove ? GLOVE_KNOCKBACK : KNOCKBACK_H;
-    sendPunch({ kx: dx / dist, kz: dz / dist, force }, id);
+    let force = hasSword ? SWORD_KNOCKBACK : hasGlove ? GLOVE_KNOCKBACK : KNOCKBACK_H;
+    let homeRun = false;
+    if (hasBat) {
+      homeRun = Math.random() < 0.25;
+      force = homeRun ? BAT_HOME_RUN_KNOCKBACK : BAT_NORMAL_KNOCKBACK;
+    }
+    sendPunch({ kx: dx / dist, kz: dz / dist, force, homeRun }, id);
+    // Spawn lightning at the target's position when attacker scores a home run
+    if (homeRun) {
+      const peer = peers.get(id);
+      if (peer) spawnLightningEffect(peer.group.position.x, peer.group.position.y, peer.group.position.z);
+    }
     if (hasSword) {
       swordDurability--;
       if (swordDurability <= 0) breakSword(); else updateDurabilityHUD();
     } else if (hasGlove) {
       gloveDurability--;
       if (gloveDurability <= 0) breakGlove(); else updateDurabilityHUD();
+    } else if (hasBat) {
+      batDurability--;
+      if (batDurability <= 0) breakBat(); else updateDurabilityHUD();
     }
   }
 }
@@ -1591,7 +1720,7 @@ function loop(now) {
     const pos = randomItemPos();
     if (pos) {
       const r = Math.random();
-    const type = r < 0.34 ? 'sword' : r < 0.67 ? 'shield' : 'glove';
+    const type = r < 0.25 ? 'sword' : r < 0.50 ? 'shield' : r < 0.75 ? 'glove' : 'bat';
       groundItems.push(makeGroundItem(type, pos.x, pos.z));
     }
   }
@@ -1643,6 +1772,18 @@ function loop(now) {
     if (peer.isGhost && peer.ghostBody) {
       peer.ghostBody.position.y = Math.sin(time * 2.4 + peer.tx * 0.5) * 0.08;
     }
+  }
+
+  // --- Lightning effects ---
+  for (let i = activeEffects.length - 1; i >= 0; i--) {
+    const ef = activeEffects[i];
+    ef.timer -= dt;
+    const t = Math.max(0, ef.timer / ef.maxTimer); // 1→0
+    ef.light.intensity = 18 * t * t;
+    ef.glow.intensity  =  8 * t;
+    // Flicker bolts rapidly
+    for (const bolt of ef.bolts) bolt.visible = t > 0.4 ? (Math.random() > 0.25) : (Math.random() > 0.6);
+    if (ef.timer <= 0) { scene.remove(ef.group); activeEffects.splice(i, 1); }
   }
 
   // --- Broadcast self at ~15 Hz ---
