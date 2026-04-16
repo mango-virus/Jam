@@ -1187,7 +1187,14 @@ function die() {
       lastHitBy = null; lastHitByWasGhost = false;
     }
     localLives--;
-    if (hasArmor && localLives < 0) { hasArmor = false; localStorage.removeItem('arenaHasArmor'); playerArmorGroup.visible = false; localLives = 0; }
+    // Armor gave +1 life (started at 4 instead of 3).
+    // The moment lives drop back to 3 the armor life has been spent — strip it.
+    if (hasArmor && localLives === 3) {
+      hasArmor = false;
+      localStorage.removeItem('arenaHasArmor');
+      playerArmorGroup.visible = false;
+      broadcastSelf();
+    }
     updateLivesHUD();
   }
   if (deathEl) deathEl.style.display = 'flex';
