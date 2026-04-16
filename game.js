@@ -1668,6 +1668,12 @@ function startGame(seed, broadcast) {
   isDead     = false;
   ghostPunchCooldown = 0;
   lastHitBy  = null;
+  // Pick a random track based on the match seed so all players hear the same one
+  const trackCount = window.GameMusic?.trackCount ?? 1;
+  const trackIdx   = Math.floor(((seed >>> 0) * 1664525 + 1013904223) >>> 0) % trackCount;
+  window.GameMusic?.stop();
+  window.GameMusic?.playTrack(trackIdx);
+  window.GameMusic?.start();
   // Clear any leftover items and reset spawn timer
   for (const it of groundItems) scene.remove(it.group);
   groundItems.length = 0;
