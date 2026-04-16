@@ -1091,7 +1091,18 @@ let isLocked = false;
 
 renderer.domElement.addEventListener('click', () => {
   if (gameState === 'playing') renderer.domElement.requestPointerLock();
+  // Start music on first interaction (browser autoplay policy)
+  window.GameMusic?.start();
 });
+
+// Mute button
+const btnMute = document.getElementById('btn-mute');
+if (btnMute) {
+  btnMute.addEventListener('click', () => {
+    const nowMuted = window.GameMusic?.toggle();
+    btnMute.textContent = nowMuted ? '🔇' : '🔊';
+  });
+}
 
 document.addEventListener('pointerlockchange', () => {
   isLocked = document.pointerLockElement === renderer.domElement;
@@ -1920,6 +1931,7 @@ function updateMenuReadyList() {
 
 if (btnReady) {
   btnReady.addEventListener('click', () => {
+    window.GameMusic?.start();
     localReady = !localReady;
     btnReady.textContent = localReady ? 'Cancel Ready' : 'Ready Up';
     btnReady.classList.toggle('is-ready', localReady);

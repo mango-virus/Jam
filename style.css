@@ -183,6 +183,26 @@ body > canvas {
 #btn-lobby:hover  { background: rgba(79, 240, 255, 0.15); }
 #btn-lobby:active { transform: scale(0.95); }
 
+/* Mute button — sits below lobby button */
+#btn-mute {
+  position: fixed;
+  top: 3.2rem;
+  right: 1rem;
+  z-index: 10;
+  padding: 0.45rem 0.7rem;
+  border-radius: 8px;
+  border: 1px solid rgba(198,75,255,0.45);
+  background: rgba(0, 0, 0, 0.55);
+  color: var(--fg);
+  font-size: 1rem;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  transition: background 0.15s, transform 0.1s;
+  line-height: 1;
+}
+#btn-mute:hover  { background: rgba(198,75,255,0.15); }
+#btn-mute:active { transform: scale(0.95); }
+
 /* Rules section */
 #rules {
   text-align: left;
