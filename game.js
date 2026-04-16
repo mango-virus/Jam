@@ -1050,11 +1050,12 @@ const KNOCKBACK_UP       = 5;    // upward kick on punch
 const PUNCH_RANGE        = 3.0;  // metres
 const PUNCH_DECAY        = 2.5;  // exponential decay rate for knockback
 
-let velY      = 0;
-let velX      = 0;   // horizontal knockback
-let velZ      = 0;
-let onGround  = true;
-let isDead    = false;
+let velY        = 0;
+let velX        = 0;   // horizontal knockback
+let velZ        = 0;
+let onGround    = true;
+let hasFallenOff = false; // true once player drops below platform surface — no landing allowed
+let isDead      = false;
 let deathTimer  = 0;
 let punchTimer  = 0; // >0 while punch animation playing
 let sendPunch   = null;
@@ -1136,6 +1137,7 @@ function updateLivesHUD() {
 function enterGhostMode() {
   isGhost = true;
   isDead  = false;
+  hasFallenOff = false; // ghosts fly freely
   // Drop items
   hasSword = false; swordDurability = 0; playerSword.visible = false;
   hasShield = false; shieldDurability = 0; playerShield.visible = false;
@@ -1193,6 +1195,7 @@ function die() {
 
 function respawn() {
   isDead = false;
+  hasFallenOff = false;
   if (gameState === 'playing' && localLives <= 0) {
     enterGhostMode();
     playerGroup.position.set(SPAWN_X, SPAWN_Y + 3, SPAWN_Z);
@@ -1559,14 +1562,20 @@ function loop(now) {
   if (!onGround) velY -= GRAVITY * dt;
   playerGroup.position.y += velY * dt;
 
+  // Once below the platform surface, lock out any landing — player must fall to their death
+  if (!hasFallenOff && playerGroup.position.y < -0.5) {
+    hasFallenOff = true;
+    onGround = false;
+  }
+
   // Walked off current surface — check if surface is no longer underfoot
-  if (onGround) {
+  if (onGround && !hasFallenOff) {
     const surf = getSurfaceBelow(playerGroup.position.x, playerGroup.position.z);
     if (surf === null || surf < playerGroup.position.y - 0.1) onGround = false;
   }
 
   // Landing — snap to highest surface when descending through it
-  if (!onGround && velY <= 0) {
+  if (!onGround && !hasFallenOff && velY <= 0) {
     const surf = getSurfaceBelow(playerGroup.position.x, playerGroup.position.z);
     if (surf !== null && playerGroup.position.y <= surf + 0.05) {
       if (-velY > FALL_DAMAGE_VEL) {
