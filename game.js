@@ -262,10 +262,7 @@ function rebuildArena(seed) {
       const dist = 1.2 + rand() * 0.8;
       const rx = x + Math.cos(a) * dist, rz = z + Math.sin(a) * dist;
       const ph = 0.8 + rand() * 3.5, pw = 0.35 + rand() * 0.6;
-      // Some pillars toppled (rotated)
-      const tilt = rand() < 0.3 ? rand() * 0.6 - 0.3 : 0;
-      const m = addMesh(new THREE.CylinderGeometry(pw/2, pw/2, ph, 7), mat(hue, 0.15 + rand() * 0.1), rx, ph/2, rz);
-      m.rotation.z = tilt;
+      addMesh(new THREE.CylinderGeometry(pw/2, pw/2, ph, 7), mat(hue, 0.15 + rand() * 0.1), rx, ph/2, rz);
       addPillarCol(rx, rz, pw/2, ph);
     }
     addGlow(x, 2, z, hue, 0.5, 6);
@@ -292,9 +289,8 @@ function rebuildArena(seed) {
       const dist = rand() * 1.2;
       const cx = x + Math.cos(a) * dist, cz = z + Math.sin(a) * dist;
       const ch = 1.0 + rand() * 2.5, cw = 0.2 + rand() * 0.35;
-      const tilt = rand() * 0.7 - 0.35;
       const m = addMesh(new THREE.ConeGeometry(cw, ch, 5), mat(hue, 0.35, 0.9), cx, ch/2, cz);
-      m.rotation.z = tilt;
+      m.rotation.z = (rand() * 0.24 - 0.12); // subtle cosmetic lean only (max ~7°)
       m.rotation.y = rand() * Math.PI * 2;
       addPillarCol(cx, cz, cw, ch);
     }
