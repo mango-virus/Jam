@@ -547,8 +547,10 @@ function broadcastSelf() {
     color:    incoming.color,
     username: incoming.username,
     moving:   isMoving,
-    sword:  hasSword,
-    shield: hasShield,
+    sword:    hasSword,
+    shield:   hasShield,
+    punching: punchTimer > 0,
+    blocking: hasShield && isBlocking,
   });
 }
 
@@ -581,7 +583,7 @@ function addPeer(id, data) {
   char.group.position.set(data.x ?? 0, 0, data.z ?? 0);
   char.group.rotation.y = data.rotY ?? 0;
   scene.add(char.group);
-  peers.set(id, { ...char, tx: data.x ?? 0, ty: data.y ?? 0, tz: data.z ?? 0, rotY: data.rotY ?? 0, moving: false, swing: 0, username: data.username, redrawLabel, pSword: !!data.sword, pShield: !!data.shield });
+  peers.set(id, { ...char, tx: data.x ?? 0, ty: data.y ?? 0, tz: data.z ?? 0, rotY: data.rotY ?? 0, moving: false, swing: 0, punchTimer: 0, blocking: false, username: data.username, redrawLabel, pSword: !!data.sword, pShield: !!data.shield });
 }
 
 function applyPeerEquip(peer, sword, shield) {
@@ -660,6 +662,8 @@ async function setupMultiplayer() {
         }
         if (!!data.sword !== peer.pSword || !!data.shield !== peer.pShield)
           applyPeerEquip(peer, !!data.sword, !!data.shield);
+        if (data.punching && peer.punchTimer <= 0) peer.punchTimer = 0.35;
+        peer.blocking = !!data.blocking;
       }
       refreshPeerCount();
     });
@@ -827,6 +831,7 @@ function respawn() {
 function doPunch() {
   if (punchTimer > 0 || isDead) return;
   punchTimer = 0.35;
+  broadcastSelf(); // immediately notify peers of punch
 
   const px = playerGroup.position.x;
   const py = playerGroup.position.y;
@@ -1047,8 +1052,20 @@ function loop(now) {
     const ps = Math.sin(peer.swing) * (peer.moving ? 0.5 : 0);
     peer.leftLeg.rotation.x  =  ps;
     peer.rightLeg.rotation.x = -ps;
-    peer.leftArm.rotation.x  = -ps * 0.6;
-    peer.rightArm.rotation.x =  ps * 0.6;
+
+    // Shield raise (left arm)
+    const pTargetLX = peer.blocking ? -1.5 : -ps * 0.6;
+    const pTargetLZ = peer.blocking ?  0.05 :  0.15;
+    peer.leftArm.rotation.x += (pTargetLX - peer.leftArm.rotation.x) * Math.min(1, dt * 14);
+    peer.leftArm.rotation.z += (pTargetLZ - peer.leftArm.rotation.z) * Math.min(1, dt * 14);
+
+    // Punch animation (right arm)
+    if (peer.punchTimer > 0) {
+      peer.punchTimer = Math.max(0, peer.punchTimer - dt);
+      peer.rightArm.rotation.x = -Math.sin((1 - peer.punchTimer / 0.35) * Math.PI) * 1.6;
+    } else {
+      peer.rightArm.rotation.x = ps * 0.6;
+    }
   }
 
   // --- Broadcast self at ~15 Hz ---
