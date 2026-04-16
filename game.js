@@ -1228,7 +1228,7 @@ function onPlatform(x, z) {
 function getSurfaceBelow(x, z) {
   let best = null;
   // Main platform (only if tile hasn't fallen)
-  if (onPlatform(x, z) && !isTileGone(x, z)) best = 0;
+  if (onPlatform(x, z) && !isTileUnstable(x, z)) best = 0;
   // Elevated platforms (AABB)
   for (const ep of elevatedPlatforms) {
     if (x >= ep.x - ep.hw && x <= ep.x + ep.hw && z >= ep.z - ep.hd && z <= ep.z + ep.hd) {
