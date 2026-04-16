@@ -149,6 +149,7 @@ const EP_DEFS = [
   { x:  1,  z: 10,  w: 5.0, d: 2.5, h: 0.7,  color: 0x1e3830 },
   { x:-10,  z: 11,  w: 3.5, d: 4.0, h: 1.6,  color: 0x3a1818 },
   { x:  8,  z:-11,  w: 4.0, d: 4.0, h: 1.0,  color: 0x2a2050 },
+  { x: -2,  z:  2,  w: 3.5, d: 3.5, h: 3.0,  color: 0x1a0840 },
 ];
 
 for (const d of EP_DEFS) {
@@ -160,13 +161,6 @@ for (const d of EP_DEFS) {
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   scene.add(mesh);
-  // Subtle grid on top surface
-  const epGrid = new THREE.GridHelper(
-    Math.max(d.w, d.d), Math.ceil(Math.max(d.w, d.d)),
-    0x2a085a, 0x1e0545
-  );
-  epGrid.position.set(d.x, d.h + 0.001, d.z);
-  scene.add(epGrid);
   elevatedPlatforms.push({ x: d.x, z: d.z, hw: d.w / 2, hd: d.d / 2, topY: d.h });
 }
 
