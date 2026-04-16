@@ -813,7 +813,42 @@ function makeCharacter(hexColor) {
   ghostGlow.position.y = 0.9;
   ghostBody.add(ghostGlow);
 
-  return { group, normalBody, ghostBody, leftArm, rightArm, leftLeg, rightLeg, swordGroup, gloveGroup, batGroup, shieldEquip, shieldEmblem, armorGroup };
+  // Rocket boots — shown on feet when equipped
+  const bootsGroup = new THREE.Group();
+  bootsGroup.visible = false;
+  const bootsMat  = new THREE.MeshStandardMaterial({ color: 0x555566, roughness: 0.4, metalness: 0.6 });
+  const thrusterMat = new THREE.MeshStandardMaterial({ color: 0xff6600, emissive: new THREE.Color(0xff3300), emissiveIntensity: 0.6, roughness: 0.3 });
+  // Left boot
+  const leftBoot = new THREE.Group();
+  leftBoot.position.set(-0.12, -0.85, 0);
+  const lSole = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.08, 0.28), bootsMat);
+  lSole.position.y = 0;
+  leftBoot.add(lSole);
+  const lThruster = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.12, 8), thrusterMat);
+  lThruster.position.set(0, -0.08, 0);
+  leftBoot.add(lThruster);
+  const lFin1 = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.1, 0.06), bootsMat);
+  lFin1.position.set(0.1, 0, -0.05); leftBoot.add(lFin1);
+  const lFin2 = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.1, 0.06), bootsMat);
+  lFin2.position.set(-0.1, 0, -0.05); leftBoot.add(lFin2);
+  bootsGroup.add(leftBoot);
+  // Right boot
+  const rightBoot = new THREE.Group();
+  rightBoot.position.set(0.12, -0.85, 0);
+  const rSole = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.08, 0.28), bootsMat);
+  rSole.position.y = 0;
+  rightBoot.add(rSole);
+  const rThruster = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.12, 8), thrusterMat);
+  rThruster.position.set(0, -0.08, 0);
+  rightBoot.add(rThruster);
+  const rFin1 = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.1, 0.06), bootsMat);
+  rFin1.position.set(0.1, 0, -0.05); rightBoot.add(rFin1);
+  const rFin2 = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.1, 0.06), bootsMat);
+  rFin2.position.set(-0.1, 0, -0.05); rightBoot.add(rFin2);
+  bootsGroup.add(rightBoot);
+  normalBody.add(bootsGroup);
+
+  return { group, normalBody, ghostBody, leftArm, rightArm, leftLeg, rightLeg, swordGroup, gloveGroup, batGroup, shieldEquip, shieldEmblem, armorGroup, bootsGroup };
 }
 
 // ------------------------------------------------------------------
@@ -824,7 +859,7 @@ const { group: playerGroup, normalBody: playerNormalBody, ghostBody: playerGhost
         leftArm, rightArm, leftLeg, rightLeg,
         swordGroup: playerSword, gloveGroup: playerGlove, batGroup: playerBat,
         shieldEquip: playerShield, shieldEmblem: playerShieldEmblem,
-        armorGroup: playerArmorGroup } = makeCharacter('#' + incoming.color);
+        armorGroup: playerArmorGroup, bootsGroup: playerBoots } = makeCharacter('#' + incoming.color);
 scene.add(playerGroup);
 
 
@@ -851,12 +886,16 @@ let hasGlove       = false;
 let gloveDurability  = 0;
 let hasBat         = false;
 let batDurability    = 0;
+let hasBoots      = false;
+let bootsDurability = 0;
+let hasDoubleJumped = false; // consumed when double jump used
 let isBlocking     = false;
 
 const SWORD_DURABILITY  = 10;
 const SHIELD_DURABILITY = 7;
 const GLOVE_DURABILITY  = 2;
 const BAT_DURABILITY    = 1;
+const BOOTS_DURABILITY  = 6;
 
 // Active lightning effects { group, light, bolts, timer, maxTimer }
 const activeEffects = [];
@@ -935,6 +974,27 @@ function makeGroundItem(type, x, z) {
     batMesh.rotation.z = 0.38;
     batMesh.position.y = 0.05;
     g.add(batMesh);
+  } else if (type === 'boots') {
+    const bMat = new THREE.MeshStandardMaterial({ color: 0x555566, roughness: 0.4, metalness: 0.6 });
+    const tMat = new THREE.MeshStandardMaterial({ color: 0xff6600, emissive: new THREE.Color(0xff3300), emissiveIntensity: 0.8, roughness: 0.3 });
+    for (const side of [-1, 1]) {
+      const boot = new THREE.Group();
+      boot.position.set(side * 0.15, 0, 0);
+      const sole = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.1, 0.32), bMat);
+      sole.position.y = 0.05;
+      boot.add(sole);
+      const thruster = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.14, 8), tMat);
+      thruster.position.set(0, -0.03, 0);
+      boot.add(thruster);
+      const fin = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.1, 0.05), bMat);
+      fin.position.set(0, 0.08, -0.1);
+      boot.add(fin);
+      g.add(boot);
+    }
+    // Faint orange glow
+    const glow = new THREE.PointLight(0xff6600, 0.7, 2.5);
+    glow.position.y = 0.1;
+    g.add(glow);
   } else { // glove
     const body = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8),
       new THREE.MeshStandardMaterial({ color: 0xcc2200, roughness: 0.55, metalness: 0.08 }));
@@ -967,6 +1027,7 @@ function updateDurabilityHUD() {
   if (hasSword)  parts.push(`⚔ ${pipBar(swordDurability,  SWORD_DURABILITY)}`);
   if (hasGlove)  parts.push(`🥊 ${pipBar(gloveDurability,  GLOVE_DURABILITY)}`);
   if (hasBat)    parts.push(`🏏 ${pipBar(batDurability,    BAT_DURABILITY)}`);
+  if (hasBoots)  parts.push(`🚀 ${pipBar(bootsDurability,  BOOTS_DURABILITY)}`);
   if (hasShield) parts.push(`🛡 ${pipBar(shieldDurability, SHIELD_DURABILITY)}`);
   durabilityEl.innerHTML = parts.join('&nbsp;&nbsp;');
 }
@@ -981,6 +1042,10 @@ function equipItem(type) {
   } else if (type === 'bat') {
     hasBat = true; batDurability = BAT_DURABILITY;
     playerBat.visible = true;
+  } else if (type === 'boots') {
+    hasBoots = true; bootsDurability = BOOTS_DURABILITY;
+    hasDoubleJumped = false;
+    playerBoots.visible = true;
   } else {
     hasShield = true; shieldDurability = SHIELD_DURABILITY;
     playerShield.visible = true;
@@ -1010,6 +1075,14 @@ function breakBat() {
   updateDurabilityHUD();
 }
 
+function breakBoots() {
+  hasBoots = false; bootsDurability = 0;
+  playerBoots.visible = false;
+  hasDoubleJumped = false;
+  window.SFX?.itemBreak();
+  updateDurabilityHUD();
+}
+
 function breakShield() {
   hasShield = false; shieldDurability = 0;
   playerShield.visible = false;
@@ -1031,6 +1104,10 @@ function dropItem() {
   if (hasBat) {
     groundItems.push(makeGroundItem('bat', px + Math.sin(dropAngle) * 1.2, pz + Math.cos(dropAngle) * 1.2));
     hasBat = false; batDurability = 0; playerBat.visible = false;
+  }
+  if (hasBoots) {
+    groundItems.push(makeGroundItem('boots', px + Math.sin(dropAngle) * 0.8, pz + Math.cos(dropAngle) * 0.8));
+    hasBoots = false; bootsDurability = 0; playerBoots.visible = false; hasDoubleJumped = false;
   }
   if (hasShield) {
     groundItems.push(makeGroundItem('shield', px + Math.sin(dropAngle) * 0.6, pz + Math.cos(dropAngle) * 0.6));
@@ -1075,6 +1152,7 @@ function broadcastSelf() {
     sword:    hasSword,
     glove:    hasGlove,
     bat:      hasBat,
+    boots:    hasBoots,
     shield:   hasShield,
     punching: punchTimer > 0,
     blocking: hasShield && isBlocking,
@@ -1114,18 +1192,20 @@ function addPeer(id, data) {
   char.group.position.set(data.x ?? 0, 0, data.z ?? 0);
   char.group.rotation.y = data.rotY ?? 0;
   scene.add(char.group);
-  peers.set(id, { ...char, tx: data.x ?? 0, ty: data.y ?? 0, tz: data.z ?? 0, rotY: data.rotY ?? 0, moving: false, swing: 0, punchTimer: 0, blocking: false, username: data.username, redrawLabel, pSword: !!data.sword, pGlove: !!data.glove, pBat: !!data.bat, pShield: !!data.shield, pColor: data.color || 'ffffff', lives: data.lives ?? 3, isGhost: !!data.isGhost, hasArmor: !!data.hasArmor, ready: !!data.ready });
+  peers.set(id, { ...char, tx: data.x ?? 0, ty: data.y ?? 0, tz: data.z ?? 0, rotY: data.rotY ?? 0, moving: false, swing: 0, punchTimer: 0, blocking: false, username: data.username, redrawLabel, pSword: !!data.sword, pGlove: !!data.glove, pBat: !!data.bat, pBoots: !!data.boots, pShield: !!data.shield, pColor: data.color || 'ffffff', lives: data.lives ?? 3, isGhost: !!data.isGhost, hasArmor: !!data.hasArmor, ready: !!data.ready });
   updateMenuReadyList();
 }
 
-function applyPeerEquip(peer, sword, glove, bat, shield) {
+function applyPeerEquip(peer, sword, glove, bat, boots, shield) {
   peer.pSword  = sword;
   peer.pGlove  = glove;
   peer.pBat    = bat;
+  peer.pBoots  = boots;
   peer.pShield = shield;
   if (peer.swordGroup)  peer.swordGroup.visible = !!sword;
   if (peer.gloveGroup)  peer.gloveGroup.visible = !!glove;
   if (peer.batGroup)    peer.batGroup.visible   = !!bat;
+  if (peer.bootsGroup)  peer.bootsGroup.visible = !!boots;
   if (peer.shieldEquip) peer.shieldEquip.visible = !!shield;
 }
 
@@ -1242,8 +1322,8 @@ async function setupMultiplayer() {
           peer.username = data.username;
           peer.redrawLabel(data.username || '?');
         }
-        if (!!data.sword !== peer.pSword || !!data.glove !== peer.pGlove || !!data.bat !== peer.pBat || !!data.shield !== peer.pShield)
-          applyPeerEquip(peer, !!data.sword, !!data.glove, !!data.bat, !!data.shield);
+        if (!!data.sword !== peer.pSword || !!data.glove !== peer.pGlove || !!data.bat !== peer.pBat || !!data.boots !== peer.pBoots || !!data.shield !== peer.pShield)
+          applyPeerEquip(peer, !!data.sword, !!data.glove, !!data.bat, !!data.boots, !!data.shield);
         if (data.punching && peer.punchTimer <= 0) peer.punchTimer = 0.35;
         peer.blocking = !!data.blocking;
         if (!!data.isGhost !== peer.isGhost) applyPeerGhostMode(peer, !!data.isGhost);
@@ -1350,6 +1430,12 @@ document.addEventListener('keydown', e => {
         const dropAngle = playerGroup.rotation.y + Math.PI;
         // Sword, glove, and bat all share the right-hand weapon slot — swap out whatever is held
         const isWeapon = it.type === 'sword' || it.type === 'glove' || it.type === 'bat';
+        // Boots are a separate slot — picking them up doesn't drop weapons
+        if (it.type === 'boots' && hasBoots) {
+          // Already have boots, drop old ones first
+          groundItems.push(makeGroundItem('boots', px + Math.sin(dropAngle) * 0.8, pz + Math.cos(dropAngle) * 0.8));
+          hasBoots = false; bootsDurability = 0; playerBoots.visible = false; hasDoubleJumped = false;
+        }
         if (isWeapon && hasSword) {
           groundItems.push(makeGroundItem('sword', px + Math.sin(dropAngle) * 1.2, pz + Math.cos(dropAngle) * 1.2));
           hasSword = false; swordDurability = 0; playerSword.visible = false;
@@ -1493,6 +1579,7 @@ function enterGhostMode() {
   hasGlove = false; gloveDurability = 0; playerGlove.visible = false;
   hasBat   = false; batDurability   = 0; playerBat.visible   = false;
   hasShield = false; shieldDurability = 0; playerShield.visible = false;
+  hasBoots  = false; bootsDurability  = 0; playerBoots.visible  = false; hasDoubleJumped = false;
   updateDurabilityHUD();
   // Remove armor
   hasArmor = false;
@@ -1974,10 +2061,18 @@ function loop(now) {
     }
   }
 
-  // Jump
-  if (keys[' '] && onGround && !isDead) {
-    velY = JUMP_FORCE;
-    onGround = false;
+  // Jump / double jump
+  if (keys[' '] && !isDead) {
+    if (onGround) {
+      velY = JUMP_FORCE;
+      onGround = false;
+      hasDoubleJumped = false;
+    } else if (hasBoots && !hasDoubleJumped && !hasFallenOff) {
+      velY = JUMP_FORCE * 0.9;
+      hasDoubleJumped = true;
+      bootsDurability--;
+      if (bootsDurability <= 0) breakBoots(); else updateDurabilityHUD();
+    }
   }
 
   // Gravity
@@ -2003,6 +2098,7 @@ function loop(now) {
       playerGroup.position.y = surf;
       velY = 0;
       onGround = true;
+      hasDoubleJumped = false;
     }
   }
 
@@ -2065,7 +2161,7 @@ function loop(now) {
     const pos = randomItemPos();
     if (pos) {
       const r = Math.random();
-    const type = r < 0.25 ? 'sword' : r < 0.50 ? 'shield' : r < 0.75 ? 'glove' : 'bat';
+    const type = r < 0.20 ? 'sword' : r < 0.40 ? 'shield' : r < 0.60 ? 'glove' : r < 0.80 ? 'bat' : 'boots';
       groundItems.push(makeGroundItem(type, pos.x, pos.z));
     }
   }
