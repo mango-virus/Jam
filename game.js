@@ -121,82 +121,223 @@ const elevatedPlatforms = []; // { x, z, hw, hd, topY } – collision data
 const epMeshes          = []; // THREE.Mesh refs for teardown
 
 function rebuildArena(seed) {
-  // --- Tear down old pillars ---
+  // --- Tear down ---
   for (const m of pillarMeshes) scene.remove(m);
   for (const l of pillarLights) scene.remove(l);
-  pillarMeshes.length = 0;
-  pillarLights.length = 0;
-  pillarData.length   = 0;
-
-  // --- Tear down old elevated platforms ---
+  pillarMeshes.length = 0; pillarLights.length = 0; pillarData.length = 0;
   for (const m of epMeshes) scene.remove(m);
-  epMeshes.length          = 0;
-  elevatedPlatforms.length = 0;
+  epMeshes.length = 0; elevatedPlatforms.length = 0;
 
-  // Seed the LCG so all players get identical layouts from the same seed
   _seed = (seed ^ 0xdeadbeef) >>> 0;
 
-  // --- Pillars ---
-  const pillarCount = 7 + Math.floor(rand() * 5); // 7–11
-  const placed = [];
-  for (let i = 0; i < pillarCount; i++) {
-    let px = 0, pz = 0;
-    for (let attempt = 0; attempt < 80; attempt++) {
-      px = (rand() * 2 - 1) * (PLATFORM_HALF - 4);
-      pz = (rand() * 2 - 1) * (PLATFORM_HALF - 4);
-      const tooCenter = Math.hypot(px, pz) < 4;
-      const tooClose  = placed.some(p => Math.hypot(px - p.x, pz - p.z) < 3.5);
-      if (!tooCenter && !tooClose) break;
-    }
-    const h   = 1.5 + rand() * 4.5;
-    const w   = 0.4 + rand() * 1.4;
-    const hue = rand(); // full colour spectrum
-    const shape = Math.floor(rand() * 3); // 0=box, 1=hex prism, 2=tapered cylinder
-    const col      = new THREE.Color().setHSL(hue, 0.8, 0.25);
-    const emissive = new THREE.Color().setHSL(hue, 1.0, 0.10);
-    let geo;
-    if      (shape === 0) geo = new THREE.BoxGeometry(w, h, w);
-    else if (shape === 1) geo = new THREE.CylinderGeometry(w / 2, w / 2, h, 6);
-    else                  geo = new THREE.CylinderGeometry(w / 2, w * 0.65, h, 8);
-    const mesh = new THREE.Mesh(geo,
-      new THREE.MeshStandardMaterial({ color: col, emissive, roughness: 0.4 }));
-    mesh.position.set(px, h / 2, pz);
-    mesh.castShadow = true;
-    scene.add(mesh);
-    pillarMeshes.push(mesh);
-    const glow = new THREE.PointLight(new THREE.Color().setHSL(hue, 1, 0.6), 0.8, 6);
-    glow.position.set(px, h + 0.5, pz);
-    scene.add(glow);
-    pillarLights.push(glow);
-    pillarData.push({ x: px, z: pz, r: w / 2, topY: h });
-    placed.push({ x: px, z: pz });
+  // --- Helpers ---
+  const occupied = []; // { x, z, r } footprints for spacing checks
+
+  function fits(x, z, r) {
+    if (Math.hypot(x, z) < 3.5) return false; // keep centre clear
+    if (Math.abs(x) > PLATFORM_HALF - 4 || Math.abs(z) > PLATFORM_HALF - 4) return false;
+    return !occupied.some(o => Math.hypot(x - o.x, z - o.z) < r + o.r + 1.0);
   }
 
-  // --- Elevated step platforms ---
-  const epCount = 3 + Math.floor(rand() * 4); // 3–6
-  for (let i = 0; i < epCount; i++) {
-    let ex = 0, ez = 0;
-    for (let attempt = 0; attempt < 60; attempt++) {
-      ex = (rand() * 2 - 1) * (PLATFORM_HALF - 6);
-      ez = (rand() * 2 - 1) * (PLATFORM_HALF - 6);
-      const tooCenter = Math.hypot(ex, ez) < 3;
-      const tooClose  = elevatedPlatforms.some(p => Math.hypot(ex - p.x, ez - p.z) < 5);
-      if (!tooCenter && !tooClose) break;
+  function rndPos(margin, footprint) {
+    for (let i = 0; i < 100; i++) {
+      const x = (rand() * 2 - 1) * (PLATFORM_HALF - margin);
+      const z = (rand() * 2 - 1) * (PLATFORM_HALF - margin);
+      if (fits(x, z, footprint)) return { x, z };
     }
-    const ew  = 3.0 + rand() * 4.0;
-    const ed  = 2.5 + rand() * 3.0;
-    const eh  = 0.5 + rand() * 3.0;
+    return null;
+  }
+
+  function mat(hue, lightness = 0.22, sat = 0.75) {
+    const col = new THREE.Color().setHSL(hue, sat, lightness);
+    const emissive = new THREE.Color().setHSL(hue, 1, 0.07);
+    return new THREE.MeshStandardMaterial({ color: col, emissive, roughness: 0.45, metalness: 0.1 });
+  }
+
+  function addMesh(geo, material, x, y, z, rotY = 0) {
+    const m = new THREE.Mesh(geo, material);
+    m.position.set(x, y, z);
+    m.rotation.y = rotY;
+    m.castShadow = true; m.receiveShadow = true;
+    scene.add(m); pillarMeshes.push(m);
+    return m;
+  }
+
+  function addGlow(x, y, z, hue, intensity = 1.0, distance = 7) {
+    const l = new THREE.PointLight(new THREE.Color().setHSL(hue, 1, 0.6), intensity, distance);
+    l.position.set(x, y, z);
+    scene.add(l); pillarLights.push(l);
+  }
+
+  function addPillarCol(x, z, r, topY) { pillarData.push({ x, z, r, topY }); }
+  function addEP(x, z, hw, hd, topY) {
+    elevatedPlatforms.push({ x, z, hw, hd, topY });
+  }
+
+  // ── Structure builders ────────────────────────────────────────────
+
+  function spawnPillar(x, z) {
+    const h = 2 + rand() * 5, w = 0.45 + rand() * 1.3;
     const hue = rand();
-    const eCol = new THREE.Color().setHSL(hue, 0.55, 0.15);
-    const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(ew, eh, ed),
-      new THREE.MeshStandardMaterial({ color: eCol, roughness: 0.8, metalness: 0.05 }));
-    mesh.position.set(ex, eh / 2, ez);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    scene.add(mesh);
-    epMeshes.push(mesh);
-    elevatedPlatforms.push({ x: ex, z: ez, hw: ew / 2, hd: ed / 2, topY: eh });
+    const shape = Math.floor(rand() * 3);
+    let geo;
+    if      (shape === 0) geo = new THREE.BoxGeometry(w, h, w);
+    else if (shape === 1) geo = new THREE.CylinderGeometry(w/2, w/2, h, 6);
+    else                  geo = new THREE.CylinderGeometry(w/2, w*0.7, h, 8);
+    addMesh(geo, mat(hue), x, h/2, z);
+    addGlow(x, h + 0.5, z, hue);
+    addPillarCol(x, z, w/2, h);
+    occupied.push({ x, z, r: w/2 + 0.5 });
+  }
+
+  function spawnWatchtower(x, z) {
+    const hue = rand();
+    const stemH = 3 + rand() * 3, stemW = 0.5;
+    const capW = 2.8 + rand() * 1.4, capH = 0.5;
+    // Stem
+    addMesh(new THREE.CylinderGeometry(stemW/2, stemW/2, stemH, 8), mat(hue, 0.2), x, stemH/2, z);
+    addPillarCol(x, z, stemW/2, stemH);
+    // Cap platform
+    addMesh(new THREE.BoxGeometry(capW, capH, capW), mat(hue, 0.3), x, stemH + capH/2, z);
+    addEP(x, z, capW/2, capW/2, stemH + capH);
+    // Finial spike on top
+    addMesh(new THREE.ConeGeometry(0.25, 1.2, 6), mat(hue, 0.45), x, stemH + capH + 0.6, z);
+    addGlow(x, stemH + capH + 1, z, hue, 1.2, 8);
+    occupied.push({ x, z, r: capW/2 });
+  }
+
+  function spawnArch(x, z) {
+    const hue = rand();
+    const legH = 2.5 + rand() * 2, legW = 0.6;
+    const span = 3.5 + rand() * 2;
+    const angle = rand() * Math.PI;
+    const dx = Math.cos(angle) * span/2, dz = Math.sin(angle) * span/2;
+    // Two legs
+    addMesh(new THREE.BoxGeometry(legW, legH, legW), mat(hue), x + dx, legH/2, z + dz);
+    addPillarCol(x + dx, z + dz, legW/2, legH);
+    addMesh(new THREE.BoxGeometry(legW, legH, legW), mat(hue), x - dx, legH/2, z - dz);
+    addPillarCol(x - dx, z - dz, legW/2, legH);
+    // Keystone beam
+    const beamLen = span + legW;
+    const beamMesh = addMesh(new THREE.BoxGeometry(beamLen, legW * 0.8, legW * 0.8), mat(hue, 0.32), x, legH, z, angle);
+    addGlow(x, legH + 1, z, hue, 0.7, 6);
+    occupied.push({ x, z, r: span/2 + 1 });
+  }
+
+  function spawnStaircase(x, z) {
+    const hue = rand();
+    const angle = rand() * Math.PI * 2;
+    const stepW = 2.2 + rand(), stepD = 1.4;
+    const steps = 3;
+    for (let s = 0; s < steps; s++) {
+      const sh = 0.6 + s * 0.7;
+      const ox = Math.cos(angle) * stepD * (s - 1);
+      const oz = Math.sin(angle) * stepD * (s - 1);
+      addMesh(new THREE.BoxGeometry(stepW, sh, stepD), mat(hue, 0.2 + s * 0.05), x + ox, sh/2, z + oz);
+      // each step is walkable
+      const hw = stepW/2, hd = stepD/2;
+      const rx = Math.cos(angle), rz = Math.sin(angle);
+      addEP(x + ox, z + oz, hw, hd, sh);
+    }
+    addGlow(x, 2.5, z, hue, 0.6, 5);
+    occupied.push({ x, z, r: stepD * steps * 0.6 });
+  }
+
+  function spawnLowWall(x, z) {
+    const hue = rand();
+    const len = 4 + rand() * 5, h = 0.5 + rand() * 0.6, thick = 0.6;
+    const angle = rand() * Math.PI;
+    addMesh(new THREE.BoxGeometry(len, h, thick), mat(hue, 0.18), x, h/2, z, angle);
+    // Low wall as a very thin EP so players can stand on top
+    addEP(x, z, len/2, thick/2, h);
+    occupied.push({ x, z, r: len/2 });
+  }
+
+  function spawnRuinCluster(x, z) {
+    const hue = rand();
+    const count = 2 + Math.floor(rand() * 3);
+    const baseAngle = rand() * Math.PI * 2;
+    for (let i = 0; i < count; i++) {
+      const a = baseAngle + (i / count) * Math.PI * 2;
+      const dist = 1.2 + rand() * 0.8;
+      const rx = x + Math.cos(a) * dist, rz = z + Math.sin(a) * dist;
+      const ph = 0.8 + rand() * 3.5, pw = 0.35 + rand() * 0.6;
+      // Some pillars toppled (rotated)
+      const tilt = rand() < 0.3 ? rand() * 0.6 - 0.3 : 0;
+      const m = addMesh(new THREE.CylinderGeometry(pw/2, pw/2, ph, 7), mat(hue, 0.15 + rand() * 0.1), rx, ph/2, rz);
+      m.rotation.z = tilt;
+      addPillarCol(rx, rz, pw/2, ph);
+    }
+    addGlow(x, 2, z, hue, 0.5, 6);
+    occupied.push({ x, z, r: 2.5 });
+  }
+
+  function spawnObelisk(x, z) {
+    const hue = rand();
+    const h = 4 + rand() * 4, w = 0.5 + rand() * 0.5;
+    // Tapered shaft
+    addMesh(new THREE.CylinderGeometry(w * 0.15, w * 0.5, h, 4), mat(hue, 0.28), x, h/2, z, rand() * Math.PI);
+    // Pyramid tip
+    addMesh(new THREE.ConeGeometry(w * 0.15, h * 0.18, 4), mat(hue, 0.5, 0.9), x, h + (h * 0.09), z, rand() * Math.PI);
+    addGlow(x, h + 0.5, z, hue, 1.4, 9);
+    addPillarCol(x, z, w * 0.4, h);
+    occupied.push({ x, z, r: w * 0.5 + 0.5 });
+  }
+
+  function spawnCrystalCluster(x, z) {
+    const hue = rand();
+    const count = 3 + Math.floor(rand() * 4);
+    for (let i = 0; i < count; i++) {
+      const a = (i / count) * Math.PI * 2 + rand() * 0.5;
+      const dist = rand() * 1.2;
+      const cx = x + Math.cos(a) * dist, cz = z + Math.sin(a) * dist;
+      const ch = 1.0 + rand() * 2.5, cw = 0.2 + rand() * 0.35;
+      const tilt = rand() * 0.7 - 0.35;
+      const m = addMesh(new THREE.ConeGeometry(cw, ch, 5), mat(hue, 0.35, 0.9), cx, ch/2, cz);
+      m.rotation.z = tilt;
+      m.rotation.y = rand() * Math.PI * 2;
+      addPillarCol(cx, cz, cw, ch);
+    }
+    addGlow(x, 1.5, z, hue, 1.6, 7);
+    occupied.push({ x, z, r: 2 });
+  }
+
+  function spawnMonument(x, z) {
+    const hue = rand();
+    const baseW = 3.5 + rand() * 2, baseH = 0.8 + rand() * 0.6;
+    const towerH = 3 + rand() * 3, towerW = 0.7;
+    // Wide base pedestal
+    addMesh(new THREE.BoxGeometry(baseW, baseH, baseW), mat(hue, 0.18), x, baseH/2, z);
+    addEP(x, z, baseW/2, baseW/2, baseH);
+    // Tower on top
+    addMesh(new THREE.BoxGeometry(towerW, towerH, towerW), mat(hue, 0.28), x, baseH + towerH/2, z);
+    addPillarCol(x, z, towerW/2, baseH + towerH);
+    // Cap
+    addMesh(new THREE.ConeGeometry(towerW * 0.8, 1.0, 4), mat(hue, 0.5), x, baseH + towerH + 0.5, z, Math.PI/4);
+    addGlow(x, baseH + towerH + 1.2, z, hue, 1.5, 10);
+    occupied.push({ x, z, r: baseW/2 });
+  }
+
+  // ── Place structures ─────────────────────────────────────────────
+  const TYPES = ['pillar','pillar','watchtower','arch','staircase','lowwall','ruins','obelisk','crystal','monument'];
+  const count = 9 + Math.floor(rand() * 5); // 9–13 structures
+
+  for (let i = 0; i < count; i++) {
+    const type = TYPES[Math.floor(rand() * TYPES.length)];
+    const margin = type === 'arch' || type === 'staircase' ? 7 : 5;
+    const footprint = type === 'monument' || type === 'arch' ? 4 : type === 'staircase' ? 3.5 : 2;
+    const pos = rndPos(margin, footprint);
+    if (!pos) continue;
+    const { x, z } = pos;
+    if      (type === 'pillar')     spawnPillar(x, z);
+    else if (type === 'watchtower') spawnWatchtower(x, z);
+    else if (type === 'arch')       spawnArch(x, z);
+    else if (type === 'staircase')  spawnStaircase(x, z);
+    else if (type === 'lowwall')    spawnLowWall(x, z);
+    else if (type === 'ruins')      spawnRuinCluster(x, z);
+    else if (type === 'obelisk')    spawnObelisk(x, z);
+    else if (type === 'crystal')    spawnCrystalCluster(x, z);
+    else if (type === 'monument')   spawnMonument(x, z);
   }
 
   // --- Randomise tile base colour ---
