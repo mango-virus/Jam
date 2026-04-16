@@ -1275,8 +1275,10 @@ function returnToLobby() {
   onGround = false;
   if (deathEl) deathEl.style.display = 'none';
   if (gameOverEl) gameOverEl.classList.remove('active');
-  // Show menu
+  // Show menu and refresh name field
   if (menuEl) menuEl.classList.add('active');
+  const _nameInput = document.getElementById('menu-name-input');
+  if (_nameInput) _nameInput.value = incoming.username;
   document.exitPointerLock();
   updateLivesHUD();
   updateMenuReadyList();
@@ -1789,6 +1791,28 @@ if (btnStart) {
     startGame(seed, true);
   });
 }
+
+// Name input in lobby menu — stays in sync with HUD username
+const menuNameInput = document.getElementById('menu-name-input');
+if (menuNameInput) {
+  menuNameInput.value = incoming.username;
+  menuNameInput.addEventListener('input', () => {
+    const trimmed = menuNameInput.value.trim().slice(0, 32);
+    if (!trimmed) return; // don't commit blank
+    incoming.username = trimmed;
+    usernameEl.textContent = trimmed;
+    broadcastSelf();
+    updateMenuReadyList();
+  });
+  // Block WASD / space from firing while typing
+  menuNameInput.addEventListener('keydown', e => e.stopPropagation());
+  menuNameInput.addEventListener('keyup',   e => e.stopPropagation());
+}
+
+// Keep menu input fresh if the HUD name is changed during a match
+usernameEl.addEventListener('blur', () => {
+  if (menuNameInput) menuNameInput.value = incoming.username;
+}, true);
 
 // Show lobby menu on load
 if (menuEl) menuEl.classList.add('active');

@@ -146,6 +146,39 @@ body > canvas {
   margin: 0 0 1.4rem;
 }
 
+/* Name input row in menu */
+#menu-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 1.2rem;
+  justify-content: center;
+}
+
+#menu-name-row label {
+  font-size: 0.88rem;
+  opacity: 0.7;
+  white-space: nowrap;
+}
+
+#menu-name-input {
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(198,75,255,0.45);
+  border-radius: 6px;
+  color: var(--fg);
+  font-size: 1rem;
+  font-weight: 600;
+  padding: 0.4rem 0.7rem;
+  width: 200px;
+  outline: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+#menu-name-input:focus {
+  border-color: var(--accent2);
+  background: rgba(255,79,216,0.1);
+}
+#menu-name-input::placeholder { opacity: 0.35; }
+
 #ready-list {
   min-height: 2rem;
   margin-bottom: 1.2rem;
