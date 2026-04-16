@@ -309,6 +309,12 @@ if (incoming.ref) {
   scene.add(returnPortal.group);
 }
 
+// Lobby portal — always present, leads to The Lobby hub
+const LOBBY_URL = 'https://callumhyoung.github.io/gamejam-lobby/';
+const lobbyPortal = makePortal(0xffb300);
+lobbyPortal.group.position.set(0, 0, -20);
+scene.add(lobbyPortal.group);
+
 // ------------------------------------------------------------------
 // Chest + item system
 // ------------------------------------------------------------------
@@ -456,6 +462,10 @@ if (returnPortal) {
   rl.position.set(-20, 5, 0);
   scene.add(rl);
 }
+
+const lobbyLabel = makeLabel('⬡ The Lobby', '#ffb300');
+lobbyLabel.position.set(0, 5, -20);
+scene.add(lobbyLabel);
 
 // ------------------------------------------------------------------
 // Multiplayer via Trystero (optional, non-blocking)
@@ -950,6 +960,8 @@ function loop(now) {
     returnPortal.light.intensity = 2.5 + 1.5 * pulse;
     returnPortal.plane.material.opacity = 0.45 + 0.3 * pulse;
   }
+  lobbyPortal.light.intensity = 2.5 + 1.5 * pulse;
+  lobbyPortal.plane.material.opacity = 0.45 + 0.3 * pulse;
 
   // --- Peer interpolation & limb animation ---
   for (const peer of peers.values()) {
@@ -1001,6 +1013,14 @@ function loop(now) {
           speed:    SPEED,
         });
       }
+    }
+    if (Math.hypot(px - lobbyPortal.group.position.x, pz - lobbyPortal.group.position.z) < 2) {
+      redirecting = true;
+      Portal.sendPlayerThroughPortal(LOBBY_URL, {
+        username: incoming.username,
+        color:    incoming.color,
+        speed:    SPEED,
+      });
     }
   }
 
