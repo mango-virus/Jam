@@ -637,7 +637,7 @@ let isBlocking     = false;
 
 const SWORD_DURABILITY  = 10;
 const SHIELD_DURABILITY = 7;
-const GLOVE_DURABILITY  = 4;
+const GLOVE_DURABILITY  = 2;
 const BAT_DURABILITY    = 1;
 
 // Active lightning effects { group, light, bolts, timer, maxTimer }
