@@ -1696,6 +1696,7 @@ async function setupMultiplayer() {
     onPunch(({ kx, kz, force, ghostPunch, homeRun }, fromPeerId) => {
       if (isGhost && !ghostPunch) return; // normal punches don't affect ghosts
       if (!isGhost && ghostPunch === true && isDead) return; // already dying
+      if (spawnImmunityTimer > 0) return; // immune after respawn
       if (isBlocking && hasShield && !ghostPunch) {
         shieldDurability--;
         window.SFX?.shieldBlock();
@@ -1990,6 +1991,7 @@ let hasFallenOff  = false; // true once player drops below platform surface — 
 let isDead        = false;
 let deathTimer    = 0;
 let homeRunDeath  = false; // true when death was caused by a home-run bat hit
+let spawnImmunityTimer = 0; // >0 = immune to knockback and death after respawning
 let punchTimer  = 0; // >0 while punch animation playing
 let sendPunch   = null;
 
@@ -2249,6 +2251,7 @@ function dropItemsOnDeath() {
 
 function die(opts = {}) {
   if (isDead || isGhost) return;
+  if (spawnImmunityTimer > 0) return; // immune after respawn
   dropItemsOnDeath();
   isDead = true;
   homeRunDeath = !!opts.homeRun;
@@ -2307,6 +2310,7 @@ function respawn() {
   }
   velY = 0; velX = 0; velZ = 0; windVelX = 0; windVelZ = 0;
   onGround = false;
+  spawnImmunityTimer = 2.0;
   if (deathEl) deathEl.style.display = 'none';
 }
 
@@ -2419,6 +2423,7 @@ function startGame(seed, broadcast) {
   isSlipping          = false;
   slipTimer           = 0;
   bananaImmunityTimer = 0;
+  spawnImmunityTimer  = 0;
   hasBanana = false; bananaDurability = 0; playerBanana.visible = false;
   for (const p of bananaPeels) scene.remove(p.group);
   bananaPeels.length = 0;
@@ -3398,6 +3403,12 @@ function loop(now) {
 
   // Banana immunity countdown
   if (bananaImmunityTimer > 0) bananaImmunityTimer -= dt;
+
+  // Spawn immunity countdown — blink normalBody to signal invincibility
+  if (spawnImmunityTimer > 0) {
+    spawnImmunityTimer = Math.max(0, spawnImmunityTimer - dt);
+    playerNormalBody.visible = spawnImmunityTimer > 0 ? (Math.floor(time * 10) % 2 === 0) : true;
+  }
 
   // Slip timer (controls how long steering is locked out)
   if (isSlipping) {
