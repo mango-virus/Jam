@@ -2415,6 +2415,12 @@ async function setupMultiplayer() {
       onGround = false;
       // Lightning effect on the receiver's end for home-run hits
       if (homeRun) spawnLightningEffect(playerGroup.position.x, playerGroup.position.y, playerGroup.position.z);
+      // Hot Potato: if we're holding the bomb and just got hit by a normal punch, pass it to the attacker
+      if (eventType === 'hot_potato' && hotPotatoHolder === 'local' && !ghostPunch && !homeRun) {
+        hotPotatoHolder = fromPeerId;
+        sendBombPass?.({ to: fromPeerId });
+        window.SFX?.bombPass();
+      }
     });
 
     const [sGame, onGame] = room.makeAction('game');
