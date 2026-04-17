@@ -3382,6 +3382,65 @@ function updateGoblinEvent(dt) {
 
   // Y position: bob when running on ground, arc when jumping, gravity when fleeing
   if (goblinSubState === 'dropping') goblinY = Math.abs(Math.sin(goblinBobPhase)) * 0.18;
+
+  // ── Collision vs structures and players (skip while fleeing off the edge) ──
+  if (goblinSubState !== 'fleeing') {
+    const GOBLIN_R = 0.45;
+    const COMBINED = GOBLIN_R + 0.32; // goblin + player radius
+
+    // Pillars — solid circle push-out
+    for (const p of pillarData) {
+      if (goblinY >= p.topY) continue;
+      const ov = circleOverlap(goblinX, goblinZ, p.x, p.z, p.r + GOBLIN_R);
+      if (ov) { goblinX += ov.nx; goblinZ += ov.nz; }
+    }
+
+    // Elevated platforms — OBB closest-point push-out
+    for (const ep of elevatedPlatforms) {
+      if (goblinY >= ep.topY) continue;
+      let cx, cz;
+      if (!ep.angle) {
+        cx = Math.max(ep.x - ep.hw, Math.min(ep.x + ep.hw, goblinX));
+        cz = Math.max(ep.z - ep.hd, Math.min(ep.z + ep.hd, goblinZ));
+      } else {
+        const ca = Math.cos(ep.angle), sa = Math.sin(ep.angle);
+        const lx = (goblinX - ep.x) * ca + (goblinZ - ep.z) * sa;
+        const lz = -(goblinX - ep.x) * sa + (goblinZ - ep.z) * ca;
+        const clx = Math.max(-ep.hw, Math.min(ep.hw, lx));
+        const clz = Math.max(-ep.hd, Math.min(ep.hd, lz));
+        cx = ep.x + clx * ca - clz * sa;
+        cz = ep.z + clx * sa + clz * ca;
+      }
+      const ddx = goblinX - cx, ddz = goblinZ - cz;
+      const d2 = ddx * ddx + ddz * ddz;
+      if (d2 > 0.0001 && d2 < GOBLIN_R * GOBLIN_R) {
+        const d = Math.sqrt(d2), s = (GOBLIN_R - d) / d;
+        goblinX += ddx * s; goblinZ += ddz * s;
+      }
+    }
+
+    // Local player
+    if (!isGhost) {
+      const pdx = goblinX - playerGroup.position.x, pdz = goblinZ - playerGroup.position.z;
+      const pd2 = pdx * pdx + pdz * pdz;
+      if (pd2 > 0.0001 && pd2 < COMBINED * COMBINED) {
+        const pd = Math.sqrt(pd2), s = (COMBINED - pd) / pd;
+        goblinX += pdx * s; goblinZ += pdz * s;
+      }
+    }
+
+    // Peers
+    for (const peer of peers.values()) {
+      if (peer.isGhost) continue;
+      const pdx = goblinX - peer.group.position.x, pdz = goblinZ - peer.group.position.z;
+      const pd2 = pdx * pdx + pdz * pdz;
+      if (pd2 > 0.0001 && pd2 < COMBINED * COMBINED) {
+        const pd = Math.sqrt(pd2), s = (COMBINED - pd) / pd;
+        goblinX += pdx * s; goblinZ += pdz * s;
+      }
+    }
+  }
+
   goblinGroup.position.set(goblinX, goblinY, goblinZ);
   // +Math.PI so the face (local -Z) always points in the direction of travel
   goblinGroup.rotation.y = goblinAngle + Math.PI;
