@@ -814,32 +814,32 @@ function makeCharacter(hexColor) {
   ghostGlow.position.y = 0.9;
   ghostBody.add(ghostGlow);
 
-  // Rocket boots — shown on feet when equipped
-  // normalBody.y = 0.10 in world; floor = normalBody local y = -0.10
-  // Legs are 0.5 tall centred at y=0.15 → bottom at -0.10 (floor)
-  // Boot group at y=-0.05 so a sole of height 0.10 bottoms out exactly at -0.10
-  const bootsGroup = new THREE.Group();
-  bootsGroup.visible = false;
+  // Rocket boots — parented to each leg so they swing with foot movement.
+  // Leg geometry: height 0.5, centred at y=0.15 in normalBody → leg local y=0.
+  // Leg bottom in leg-local space = -0.25.
+  // Boot group at leg-local y=-0.20: sole (h=0.10) bottom = -0.25 in leg space
+  //   → normalBody y = 0.15 + (-0.25) = -0.10 = world y 0 (floor). No clip.
   const bootsMat    = new THREE.MeshStandardMaterial({ color: 0x333344, roughness: 0.35, metalness: 0.75 });
   const thrusterMat = new THREE.MeshStandardMaterial({ color: 0xff6600, emissive: new THREE.Color(0xff3300), emissiveIntensity: 0.8, roughness: 0.3 });
 
-  function makeOneBoot(xPos) {
+  function makeOneBoot() {
     const boot = new THREE.Group();
-    boot.position.set(xPos, -0.05, 0);
+    // Centred on the leg (leg already carries its own x offset)
+    boot.position.set(0, -0.20, 0);
+    boot.visible = false;
 
-    // Sole — sits on the floor, bottom at normalBody y=-0.10
+    // Sole
     const sole = new THREE.Mesh(new THREE.BoxGeometry(0.21, 0.10, 0.30), bootsMat);
-    sole.position.y = 0; // centre of sole; bottom = -0.05, top = +0.05
     boot.add(sole);
 
-    // Ankle cuff — wraps lower leg above the sole
+    // Ankle cuff — wraps the lower leg above the sole
     const cuff = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.14, 0.22), bootsMat);
-    cuff.position.y = 0.12; // sits just above the sole top
+    cuff.position.y = 0.12;
     boot.add(cuff);
 
-    // Rear thruster — horizontal cylinder pointing backward (no floor clip)
+    // Heel thruster — horizontal cylinder, nozzle faces backward (-z)
     const thruster = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.06, 0.16, 8), thrusterMat);
-    thruster.rotation.x = Math.PI / 2;          // lay on its side, nozzle faces -z
+    thruster.rotation.x = Math.PI / 2;
     thruster.position.set(0, 0.06, -0.20);
     boot.add(thruster);
 
@@ -855,9 +855,16 @@ function makeCharacter(hexColor) {
     return boot;
   }
 
-  bootsGroup.add(makeOneBoot(-0.13));
-  bootsGroup.add(makeOneBoot( 0.13));
-  normalBody.add(bootsGroup);
+  const leftBootMesh  = makeOneBoot();
+  const rightBootMesh = makeOneBoot();
+  leftLeg.add(leftBootMesh);   // inherits leftLeg's swing rotation
+  rightLeg.add(rightBootMesh); // inherits rightLeg's swing rotation
+
+  // Proxy object — same .visible API as before, controls both boots at once
+  const bootsGroup = {
+    get visible() { return leftBootMesh.visible; },
+    set visible(v) { leftBootMesh.visible = v; rightBootMesh.visible = v; }
+  };
 
   return { group, normalBody, ghostBody, leftArm, rightArm, leftLeg, rightLeg, swordGroup, gloveGroup, batGroup, shieldEquip, shieldEmblem, armorGroup, bootsGroup };
 }
