@@ -755,5 +755,78 @@
     src2.start(t + 0.05); src2.stop(t + 0.3);
   }
 
-  window.SFX = { punch, swordHit, gloveHit, batNormal, batHomeRun, shieldBlock, shieldBreak, itemBreak, pickup, die, respawn, ghostPunch, swordSwing, gloveSwing, batSwing, rocketBoost, bananaPlace, bananaSlip, windGust, goblinDrop, lavaBurn, bombTick, bombPass, bombExplode, gumballLand, gumballShoot, gumballBreak, bubbleTrap, bubblePop };
+  // ── BLACK HOLE THROW — ascending void sweep + whoosh ────────────
+  function blackHoleThrow() {
+    ensureCtx(); resume();
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(80, t);
+    o.frequency.exponentialRampToValueAtTime(320, t + 0.18);
+    const g1 = ctx.createGain();
+    g1.gain.setValueAtTime(0.45, t); g1.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+    o.connect(g1); g1.connect(master);
+    o.start(t); o.stop(t + 0.25);
+    const src = ctx.createBufferSource(); src.buffer = noise(0.18);
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass';
+    bp.frequency.setValueAtTime(600, t); bp.frequency.exponentialRampToValueAtTime(2200, t + 0.18); bp.Q.value = 1.2;
+    const g2 = ctx.createGain();
+    g2.gain.setValueAtTime(0.3, t); g2.gain.exponentialRampToValueAtTime(0.001, t + 0.20);
+    src.connect(bp); bp.connect(g2); g2.connect(master);
+    src.start(t); src.stop(t + 0.2);
+  }
+
+  // ── BLACK HOLE PULL — deep gravitational rumble ──────────────────
+  function blackHolePull() {
+    ensureCtx(); resume();
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator(); o.type = 'sawtooth';
+    o.frequency.setValueAtTime(42, t);
+    const lfo = ctx.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 4.5;
+    const lfoG = ctx.createGain(); lfoG.gain.value = 8;
+    lfo.connect(lfoG); lfoG.connect(o.frequency);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 180;
+    const g1 = ctx.createGain();
+    g1.gain.setValueAtTime(0.0, t); g1.gain.linearRampToValueAtTime(0.7, t + 0.08);
+    g1.gain.setValueAtTime(0.7, t + 0.55); g1.gain.exponentialRampToValueAtTime(0.001, t + 0.85);
+    o.connect(lp); lp.connect(g1); g1.connect(master);
+    lfo.start(t); o.start(t); o.stop(t + 0.9); lfo.stop(t + 0.9);
+    const src = ctx.createBufferSource(); src.buffer = noise(0.7);
+    const hp = ctx.createBiquadFilter(); hp.type = 'highpass';
+    hp.frequency.setValueAtTime(3000, t); hp.frequency.exponentialRampToValueAtTime(800, t + 0.7);
+    const g2 = ctx.createGain();
+    g2.gain.setValueAtTime(0.25, t); g2.gain.exponentialRampToValueAtTime(0.001, t + 0.75);
+    src.connect(hp); hp.connect(g2); g2.connect(master);
+    src.start(t); src.stop(t + 0.75);
+  }
+
+  // ── BLACK HOLE EXPLODE — outward gravity burst ───────────────────
+  function blackHoleExplode() {
+    ensureCtx(); resume();
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource(); src.buffer = noise(0.9);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(300, t); lp.frequency.exponentialRampToValueAtTime(8000, t + 0.25);
+    lp.frequency.exponentialRampToValueAtTime(1000, t + 0.8);
+    const g1 = ctx.createGain();
+    g1.gain.setValueAtTime(1.5, t); g1.gain.exponentialRampToValueAtTime(0.001, t + 0.9);
+    src.connect(lp); lp.connect(g1); g1.connect(master);
+    src.start(t); src.stop(t + 0.95);
+    const o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(28, t); o.frequency.exponentialRampToValueAtTime(140, t + 0.18);
+    const g2 = ctx.createGain();
+    g2.gain.setValueAtTime(0.0, t); g2.gain.linearRampToValueAtTime(1.2, t + 0.04);
+    g2.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+    o.connect(g2); g2.connect(master);
+    o.start(t); o.stop(t + 0.5);
+    for (const freq of [880, 1320, 2200]) {
+      const o2 = ctx.createOscillator(); o2.type = 'sine'; o2.frequency.value = freq;
+      const g3 = ctx.createGain();
+      g3.gain.setValueAtTime(0.0, t + 0.05); g3.gain.linearRampToValueAtTime(0.25, t + 0.12);
+      g3.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
+      o2.connect(g3); g3.connect(master);
+      o2.start(t + 0.05); o2.stop(t + 0.75);
+    }
+  }
+
+  window.SFX = { punch, swordHit, gloveHit, batNormal, batHomeRun, shieldBlock, shieldBreak, itemBreak, pickup, die, respawn, ghostPunch, swordSwing, gloveSwing, batSwing, rocketBoost, bananaPlace, bananaSlip, windGust, goblinDrop, lavaBurn, bombTick, bombPass, bombExplode, gumballLand, gumballShoot, gumballBreak, bubbleTrap, bubblePop, blackHoleThrow, blackHolePull, blackHoleExplode };
 })();

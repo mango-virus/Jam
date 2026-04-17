@@ -677,6 +677,33 @@ function makeCharacter(hexColor) {
   });
   rightArm.add(bananaGroup);
 
+  // Black hole grenade (shown in right hand when equipped)
+  const grenadeGroup = new THREE.Group();
+  grenadeGroup.position.set(0, -0.55, 0.10);
+  grenadeGroup.visible = false;
+  const gCoreMat = new THREE.MeshStandardMaterial({
+    color: 0x050008, metalness: 0.8, roughness: 0.2,
+    emissive: new THREE.Color(0x4400aa), emissiveIntensity: 0.8,
+  });
+  const gCoreSphere = new THREE.Mesh(new THREE.SphereGeometry(0.10, 10, 8), gCoreMat);
+  grenadeGroup.add(gCoreSphere);
+  const gRingMatA = new THREE.MeshStandardMaterial({
+    color: 0xaa55ff, emissive: new THREE.Color(0x7722cc), emissiveIntensity: 1.5,
+    transparent: true, opacity: 0.85,
+  });
+  const gRingA = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.018, 6, 12), gRingMatA);
+  gRingA.rotation.x = Math.PI / 3;
+  grenadeGroup.add(gRingA);
+  const gRingMatB = new THREE.MeshStandardMaterial({
+    color: 0xaa55ff, emissive: new THREE.Color(0x7722cc), emissiveIntensity: 1.5,
+    transparent: true, opacity: 0.85,
+  });
+  const gRingB = new THREE.Mesh(new THREE.TorusGeometry(0.10, 0.015, 6, 12), gRingMatB);
+  gRingB.rotation.x = -Math.PI / 5;
+  gRingB.rotation.z = Math.PI / 4;
+  grenadeGroup.add(gRingB);
+  rightArm.add(grenadeGroup);
+
   normalBody.add(rightArm);
 
   // ── Legs — random trouser colour ────────────────────────────
@@ -1103,7 +1130,7 @@ function makeCharacter(hexColor) {
     set visible(v) { leftBootMesh.visible = v; rightBootMesh.visible = v; }
   };
 
-  return { group, normalBody, ghostBody, leftArm, rightArm, leftLeg, rightLeg, swordGroup, gloveGroup, batGroup, bananaGroup, shieldEquip, shieldEmblem, armorGroup, bootsGroup };
+  return { group, normalBody, ghostBody, leftArm, rightArm, leftLeg, rightLeg, swordGroup, gloveGroup, batGroup, bananaGroup, grenadeGroup, shieldEquip, shieldEmblem, armorGroup, bootsGroup };
 }
 
 // ------------------------------------------------------------------
@@ -1114,6 +1141,7 @@ const { group: playerGroup, normalBody: playerNormalBody, ghostBody: playerGhost
         leftArm, rightArm, leftLeg, rightLeg,
         swordGroup: playerSword, gloveGroup: playerGlove, batGroup: playerBat,
         bananaGroup: playerBanana,
+        grenadeGroup: playerGrenade,
         shieldEquip: playerShield, shieldEmblem: playerShieldEmblem,
         armorGroup: playerArmorGroup, bootsGroup: playerBoots } = makeCharacter('#' + incoming.color);
 scene.add(playerGroup);
@@ -1155,6 +1183,15 @@ let bananaDurability     = 0;
 let bananaImmunityTimer  = 0;   // >0 = placer is immune to their own peel
 let isSlipping           = false;
 let slipTimer            = 0;
+
+let hasBlackHoleGrenade  = false;
+let thrownGrenade        = null;   // { group, velX, velY, velZ } flying projectile
+let blackHoleActive      = false;
+let blackHoleX           = 0, blackHoleZ = 0;
+let blackHoleTimer       = 0;      // counts down 4→0
+let blackHoleGroup       = null;   // Three.js visual
+let blackHolePullTimer   = 0;      // throttle pull sound to every ~0.9s
+let sendBlackHoleAction  = null;   // P2P action
 
 // Active banana peels in the arena: { group, x, z, id }
 const bananaPeels = [];
@@ -1365,6 +1402,30 @@ function makeGroundItem(type, x, z, id = nextItemId()) {
     g.add(bMeshG);
     const bGlow = new THREE.PointLight(0xffee00, 0.5, 2.0);
     bGlow.position.y = 0.35; g.add(bGlow);
+  } else if (type === 'grenade') {
+    const gCoreMat = new THREE.MeshStandardMaterial({
+      color: 0x050008, metalness: 0.8, roughness: 0.2,
+      emissive: new THREE.Color(0x4400aa), emissiveIntensity: 0.9,
+    });
+    // pivot group centers the model at y=0.28 above group origin
+    const pivot = new THREE.Group();
+    pivot.position.y = 0.28;
+    g.add(pivot);
+    const coreSphere = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 9), gCoreMat);
+    pivot.add(coreSphere);
+    const gRingMat = new THREE.MeshStandardMaterial({
+      color: 0xaa55ff, emissive: new THREE.Color(0x7722cc), emissiveIntensity: 1.4,
+      transparent: true, opacity: 0.85,
+    });
+    const ringA = new THREE.Mesh(new THREE.TorusGeometry(0.30, 0.025, 6, 16), gRingMat);
+    ringA.rotation.x = Math.PI / 3;
+    pivot.add(ringA);
+    const ringB = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.020, 6, 16), gRingMat);
+    ringB.rotation.x = -Math.PI / 5;
+    ringB.rotation.z = Math.PI / 4;
+    pivot.add(ringB);
+    const gGlow = new THREE.PointLight(0x6600cc, 1.2, 3.0);
+    pivot.add(gGlow);
   } else { // glove — matches the equipped version geometry
     const gGloveMat = new THREE.MeshStandardMaterial({ color: 0xcc2200, roughness: 0.55, metalness: 0.08 });
     // Main glove body (sphere, scaled wider than tall)
@@ -1439,6 +1500,86 @@ function placePeel() {
   updateDurabilityHUD();
 }
 
+function throwBlackHoleGrenade() {
+  if (!hasBlackHoleGrenade) return;
+  hasBlackHoleGrenade = false;
+  playerGrenade.visible = false;
+  updateDurabilityHUD();
+
+  // Build a simple flying orb visual
+  const grp = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0x050008, metalness: 0.8, roughness: 0.2,
+    emissive: new THREE.Color(0x4400aa), emissiveIntensity: 1.2,
+  });
+  grp.add(new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), mat));
+  const throwY = playerGroup.position.y + 1.1;
+  grp.position.set(playerGroup.position.x, throwY, playerGroup.position.z);
+  scene.add(grp);
+
+  // Throw in the direction the player faces with an upward arc
+  const throwSpeed = 16;
+  const fwdX = Math.sin(playerGroup.rotation.y);
+  const fwdZ = Math.cos(playerGroup.rotation.y);
+  thrownGrenade = {
+    group: grp,
+    velX: fwdX * throwSpeed,
+    velY: 5,
+    velZ: fwdZ * throwSpeed,
+  };
+  window.SFX?.blackHoleThrow();
+}
+
+function activateBlackHole(x, z) {
+  if (blackHoleActive) return;
+  blackHoleActive = true;
+  blackHoleX = x;
+  blackHoleZ = z;
+  blackHoleTimer = 4.0;
+  blackHolePullTimer = 0;
+  const bh = makeBlackHoleEffect();
+  blackHoleGroup = bh.group;
+  blackHoleGroup.position.set(x, 0.8, z);
+  scene.add(blackHoleGroup);
+  window.SFX?.blackHolePull();
+}
+
+function detonateBlackHole() {
+  blackHoleActive = false;
+  blackHoleTimer  = 0;
+  window.SFX?.blackHoleExplode();
+
+  // Apply outward explosion to local player
+  if (!isDead && !isGhost) {
+    const dx = playerGroup.position.x - blackHoleX;
+    const dz = playerGroup.position.z - blackHoleZ;
+    const dist = Math.hypot(dx, dz);
+    const BLAST_RADIUS = 14;
+    if (dist < BLAST_RADIUS) {
+      const falloff = 1 - dist / BLAST_RADIUS;
+      const force = 40 * falloff + 8;
+      const nx = dist > 0.1 ? dx / dist : Math.sin(playerGroup.rotation.y);
+      const nz = dist > 0.1 ? dz / dist : Math.cos(playerGroup.rotation.y);
+      velX += nx * force;
+      velZ += nz * force;
+      velY  = Math.max(velY, 10 * falloff + 4);
+    }
+  }
+
+  // Shrink and remove effect
+  if (blackHoleGroup) {
+    const grp = blackHoleGroup;
+    blackHoleGroup = null;
+    let elapsed = 0;
+    explosionEffects.push((dt) => {
+      elapsed += dt;
+      const s = Math.max(0, 1 - elapsed / 0.4);
+      grp.scale.setScalar(s);
+      if (elapsed >= 0.4) { scene.remove(grp); return true; }
+    });
+  }
+}
+
 // Remove a peel by id from the scene and array.
 function removePeelById(id) {
   const idx = bananaPeels.findIndex(p => p.id === id);
@@ -1464,6 +1605,7 @@ function updateDurabilityHUD() {
   if (hasBoots)   parts.push(`🚀 ${pipBar(bootsDurability,  BOOTS_DURABILITY)}`);
   if (hasShield)  parts.push(`🛡 ${pipBar(shieldDurability, SHIELD_DURABILITY)}`);
   if (hasBanana)  parts.push(`🍌 ${pipBar(bananaDurability, BANANA_DURABILITY)}`);
+  if (hasBlackHoleGrenade) parts.push('🕳️ Grenade');
   durabilityEl.innerHTML = parts.join('&nbsp;&nbsp;');
 }
 
@@ -1484,6 +1626,9 @@ function equipItem(type) {
   } else if (type === 'banana') {
     hasBanana = true; bananaDurability = BANANA_DURABILITY;
     playerBanana.visible = true;
+  } else if (type === 'grenade') {
+    hasBlackHoleGrenade = true;
+    playerGrenade.visible = true;
   } else {
     hasShield = true; shieldDurability = SHIELD_DURABILITY;
     playerShield.visible = true;
@@ -1549,6 +1694,7 @@ function dropItem() {
   if (hasBoots)  { spawnDrop('boots',  0.8); hasBoots  = false; bootsDurability  = 0; playerBoots.visible  = false; hasDoubleJumped = false; }
   if (hasShield) { spawnDrop('shield', 0.6); hasShield = false; shieldDurability = 0; playerShield.visible = false; }
   if (hasBanana) { spawnDrop('banana', 1.0); hasBanana = false; bananaDurability = 0; playerBanana.visible = false; }
+  if (hasBlackHoleGrenade) { spawnDrop('grenade', 1.0); hasBlackHoleGrenade = false; playerGrenade.visible = false; }
   updateDurabilityHUD();
 }
 
@@ -1793,6 +1939,12 @@ async function setupMultiplayer() {
       window.SFX?.bombPass();
     });
 
+    const [sBHole, onBHole] = room.makeAction('bhole');
+    sendBlackHoleAction = sBHole;
+    onBHole(({ x, z }) => {
+      activateBlackHole(x, z);
+    });
+
     room.onPeerJoin((peerId) => {
       broadcastSelf();
       refreshPeerCount();
@@ -1937,7 +2089,9 @@ document.addEventListener('mousemove', e => {
 document.addEventListener('mousedown', e => {
   if (!isLocked) return;
   if (e.button === 0) {
-    if (hasBanana && gameState === 'playing' && !isDead && !isGhost) {
+    if (hasBlackHoleGrenade && gameState === 'playing' && !isDead && !isGhost) {
+      throwBlackHoleGrenade();
+    } else if (hasBanana && gameState === 'playing' && !isDead && !isGhost) {
       placePeel();
     } else {
       doPunch();
@@ -1984,6 +2138,8 @@ document.addEventListener('keydown', e => {
           groundItems.push(dropped);
           sendItemEvent?.({ act: 'drop', id: dropped.id, type: dropped.type, x: dropped.x, z: dropped.z });
         }
+        // Grenade: can only hold one at a time, don't allow second pickup
+        if (it.type === 'grenade' && hasBlackHoleGrenade) continue;
         const isWeapon = it.type === 'sword' || it.type === 'glove' || it.type === 'bat' || it.type === 'banana';
         if (it.type === 'boots' && hasBoots) {
           swapDrop('boots', 0.8);
@@ -2287,6 +2443,8 @@ function enterGhostMode() {
   hasShield = false; shieldDurability = 0; playerShield.visible = false;
   hasBoots  = false; bootsDurability  = 0; playerBoots.visible  = false; hasDoubleJumped = false;
   hasBanana = false; bananaDurability = 0; playerBanana.visible = false;
+  hasBlackHoleGrenade = false; playerGrenade.visible = false;
+  if (thrownGrenade) { scene.remove(thrownGrenade.group); thrownGrenade = null; }
   isSlipping = false; slipTimer = 0;
   updateDurabilityHUD();
   // Remove armor
@@ -2344,6 +2502,7 @@ function dropItemsOnDeath() {
   if (hasBoots)  { spawnDrop('boots');  hasBoots  = false; bootsDurability  = 0; playerBoots.visible  = false; hasDoubleJumped = false; }
   if (hasShield) { spawnDrop('shield'); hasShield = false; shieldDurability = 0; playerShield.visible = false; }
   if (hasBanana) { spawnDrop('banana'); hasBanana = false; bananaDurability = 0; playerBanana.visible = false; }
+  if (hasBlackHoleGrenade) { spawnDrop('grenade'); hasBlackHoleGrenade = false; playerGrenade.visible = false; }
   updateDurabilityHUD();
 }
 
@@ -2422,6 +2581,8 @@ function respawn() {
   velY = 0; velX = 0; velZ = 0; windVelX = 0; windVelZ = 0;
   onGround = false;
   spawnImmunityTimer = 3.0;
+  // Clear thrown grenade if respawning mid-throw
+  if (thrownGrenade) { scene.remove(thrownGrenade.group); thrownGrenade = null; }
   if (deathEl) deathEl.style.display = 'none';
   // Clear bubble trap if caught while respawning
   if (isBubbleTrapped) popLocalBubble();
@@ -2508,6 +2669,12 @@ function returnToLobby() {
   isBubbleTrapped = false; bubbleTrappedTimer = 0;
   if (localBubbleMesh) { playerGroup.remove(localBubbleMesh); localBubbleMesh = null; }
   hideEventAnnouncement();
+  // Reset black hole grenade
+  hasBlackHoleGrenade = false;
+  playerGrenade.visible = false;
+  if (thrownGrenade) { scene.remove(thrownGrenade.group); thrownGrenade = null; }
+  if (blackHoleGroup) { scene.remove(blackHoleGroup); blackHoleGroup = null; }
+  blackHoleActive = false; blackHoleTimer = 0;
   // Move player to lobby
   playerGroup.position.set(0, 1, 0);
   velY = 0; velX = 0; velZ = 0; windVelX = 0; windVelZ = 0;
@@ -2551,6 +2718,12 @@ function startGame(seed, broadcast) {
   isBubbleTrapped = false; bubbleTrappedTimer = 0;
   if (localBubbleMesh) { playerGroup.remove(localBubbleMesh); localBubbleMesh = null; }
   explosionEffects.length = 0;
+  // Reset black hole grenade
+  hasBlackHoleGrenade = false;
+  playerGrenade.visible = false;
+  if (thrownGrenade) { scene.remove(thrownGrenade.group); thrownGrenade = null; }
+  if (blackHoleGroup) { scene.remove(blackHoleGroup); blackHoleGroup = null; }
+  blackHoleActive = false; blackHoleTimer = 0;
   // Reset random events — deterministic so every client fires at the same time
   _gameSeed = seed;
   _rainPeelBase = 0x40000000;
@@ -3219,6 +3392,36 @@ function despawnGumballMachine() {
   if (isBubbleTrapped) popLocalBubble();
 }
 
+// ── BLACK HOLE EFFECT ──────────────────────────────────────────────────────
+
+function makeBlackHoleEffect() {
+  const g = new THREE.Group();
+  // Core — void sphere
+  const coreMat = new THREE.MeshStandardMaterial({
+    color: 0x000000, metalness: 0.8, roughness: 0.2,
+    emissive: new THREE.Color(0x330066), emissiveIntensity: 2.0,
+  });
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.55, 16, 12), coreMat);
+  g.add(core);
+  // Accretion rings at different tilts
+  const ringMats = [
+    new THREE.MeshStandardMaterial({ color: 0x7700ff, emissive: new THREE.Color(0xaa44ff), emissiveIntensity: 2.5, transparent: true, opacity: 0.85 }),
+    new THREE.MeshStandardMaterial({ color: 0x5500cc, emissive: new THREE.Color(0x8833ff), emissiveIntensity: 2.0, transparent: true, opacity: 0.65 }),
+    new THREE.MeshStandardMaterial({ color: 0x330099, emissive: new THREE.Color(0x6622cc), emissiveIntensity: 1.6, transparent: true, opacity: 0.50 }),
+  ];
+  const rings = [];
+  for (let i = 0; i < 3; i++) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(1.0 + i * 0.45, 0.07 - i * 0.01, 8, 24), ringMats[i]);
+    ring.rotation.x = Math.PI / 2 + i * 0.55;
+    ring.rotation.z = i * 0.9;
+    g.add(ring);
+    rings.push(ring);
+  }
+  const light = new THREE.PointLight(0x8800ff, 5, 14);
+  g.add(light);
+  return { group: g, core, rings, light };
+}
+
 // Called independently on every client at the same deterministic game-time.
 function triggerEvent(type) {
   eventState = 'announcing';
@@ -3677,7 +3880,7 @@ function generateGoblinSchedule() {
   function r() { s = (Math.imul(s, 1664525) + 1013904223) | 0; return (s >>> 0) / 0x100000000; }
   const margin = 4;
   const half   = PLATFORM_HALF - margin;
-  const TYPES  = ['sword', 'glove', 'bat', 'shield', 'boots', 'banana'];
+  const TYPES  = ['sword', 'glove', 'bat', 'shield', 'boots', 'banana', 'grenade'];
   const startX = (r() * 2 - 1) * half * 0.4;
   const startZ = (r() * 2 - 1) * half * 0.4;
   const drops  = [];
@@ -4115,6 +4318,24 @@ function loop(now) {
     // Win condition check (every ~0.5s)
     if (Math.floor(gameTime * 2) !== Math.floor((gameTime - dt) * 2)) checkWinCondition();
 
+    // ── Flying black hole grenade ─────────────────────────────────
+    if (thrownGrenade) {
+      thrownGrenade.velY -= GRAVITY * dt;
+      thrownGrenade.group.position.x += thrownGrenade.velX * dt;
+      thrownGrenade.group.position.y += thrownGrenade.velY * dt;
+      thrownGrenade.group.position.z += thrownGrenade.velZ * dt;
+      thrownGrenade.group.rotation.y += dt * 3;
+      // Landed
+      if (thrownGrenade.group.position.y <= 0.1) {
+        const lx = thrownGrenade.group.position.x;
+        const lz = thrownGrenade.group.position.z;
+        scene.remove(thrownGrenade.group);
+        thrownGrenade = null;
+        activateBlackHole(lx, lz);
+        sendBlackHoleAction?.({ x: lx, z: lz });
+      }
+    }
+
     // --- Random event system (deterministic — all clients run in sync via shared seed) ---
     if (eventState === 'idle' && gameTime >= nextEventTime) {
       let nextType;
@@ -4158,6 +4379,37 @@ function loop(now) {
       }
       if (eventTimer <= 0 && eventState === 'running') endEvent();
     }
+    // ── Black hole pull + timer ───────────────────────────────────
+    if (blackHoleActive) {
+      blackHoleTimer -= dt;
+
+      // Pull local player toward center
+      if (!isDead && !isGhost) {
+        const dx = blackHoleX - playerGroup.position.x;
+        const dz = blackHoleZ - playerGroup.position.z;
+        const dist = Math.max(Math.hypot(dx, dz), 0.3);
+        const pullForce = Math.min(28, 18 / (dist * 0.25 + 0.5));
+        velX += (dx / dist) * pullForce * dt;
+        velZ += (dz / dist) * pullForce * dt;
+      }
+
+      // Ambient pull sound every ~0.9s
+      blackHolePullTimer -= dt;
+      if (blackHolePullTimer <= 0) {
+        window.SFX?.blackHolePull();
+        blackHolePullTimer = 0.9;
+      }
+
+      // Animate visual: spin rings, pulse core
+      if (blackHoleGroup) {
+        blackHoleGroup.rotation.y += dt * 1.8;
+        const pulse = 0.92 + Math.sin(time * 8) * 0.08;
+        blackHoleGroup.scale.setScalar(pulse);
+      }
+
+      if (blackHoleTimer <= 0) detonateBlackHole();
+    }
+
     // --- Explosion effects (hot potato) ---
     for (let i = explosionEffects.length - 1; i >= 0; i--) {
       if (explosionEffects[i](dt)) explosionEffects.splice(i, 1);
@@ -4464,7 +4716,7 @@ function loop(now) {
     const pos = randomItemPos();
     if (pos) {
       const r = Math.random();
-      const type = r < 0.18 ? 'sword' : r < 0.36 ? 'shield' : r < 0.52 ? 'glove' : r < 0.66 ? 'bat' : r < 0.83 ? 'boots' : 'banana';
+      const type = r < 0.15 ? 'sword' : r < 0.30 ? 'shield' : r < 0.44 ? 'glove' : r < 0.57 ? 'bat' : r < 0.72 ? 'boots' : r < 0.87 ? 'banana' : 'grenade';
       const it = makeGroundItem(type, pos.x, pos.z);
       groundItems.push(it);
       sendItemEvent?.({ act: 'spawn', id: it.id, type: it.type, x: it.x, z: it.z });
