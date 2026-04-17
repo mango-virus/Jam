@@ -1844,8 +1844,10 @@ function die(opts = {}) {
   homeRunDeath = !!opts.homeRun;
   deathTimer = homeRunDeath ? 4.0 : 2.0;
   window.SFX?.die();
-  velY = 0; velX = 0; velZ = 0;
-  hasFallenOff = true; // prevent physics re-landing
+  if (!homeRunDeath) {
+    velY = 0; velX = 0; velZ = 0;
+    hasFallenOff = true; // prevent physics re-landing
+  }
   if (gameState === 'playing') {
     // Notify ghost who killed us so they can revive
     if (lastHitByWasGhost && lastHitBy) {
