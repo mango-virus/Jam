@@ -1661,20 +1661,6 @@ async function setupMultiplayer() {
       } else if (data.type === 'ready') {
         const peer = peers.get(fromPeerId);
         if (peer) { peer.ready = !!data.ready; updateMenuReadyList(); }
-      } else if (data.type === 'event' && data.act === 'announce') {
-        // Host is announcing an upcoming event — start our own countdown
-        if (gameState === 'playing' && eventState === 'idle') {
-          eventState = 'announcing';
-          eventType  = data.event;
-          eventTimer = EVENT_ANNOUNCE_S;
-          showEventAnnouncement(data.event);
-        }
-      } else if (data.type === 'falling_banana') {
-        // Host spawned a falling banana — show the same visual on our end
-        if (gameState === 'playing' && eventState === 'running' && eventType === 'rain_bananas') {
-          spawnFallingBananaVisual(data.x, data.z, false);
-        }
-      }
     });
 
     const [sPeel, onPeel] = room.makeAction('peel');
@@ -1935,16 +1921,19 @@ let tileDropIndex      = 0;         // next tile to warn
 let nextTileTime       = 0;         // game-time when next tile event fires
 let gameOverTimer      = 0;
 
-// --- Random event system ---
-let eventState           = 'idle';  // 'idle' | 'announcing' | 'running'
-let eventType            = null;    // which event is active
-let eventTimer           = 0;      // seconds remaining in current phase
-let nextEventTime        = 0;      // gameTime when to fire next event (set in startGame)
-let rainBananaSpawnTimer = 0;      // countdown between falling banana spawns
-const EVENT_ANNOUNCE_S       = 5;
-const RAIN_BANANAS_DURATION  = 25;
-const RAIN_BANANAS_INTERVAL  = 1.8; // seconds between banana drops
-const fallingBananas         = [];  // { group, x, z, velY, placesPeel, rotVX, rotVZ }
+// --- Random event system (fully deterministic — driven by game seed, no P2P needed) ---
+let _gameSeed        = 0;           // shared game seed, same on every client
+let _rainPeelBase    = 0x40000000;  // deterministic peel-ID pool for rain events
+let eventState       = 'idle';      // 'idle' | 'announcing' | 'running'
+let eventType        = null;
+let eventTimer       = 0;
+let nextEventTime    = 0;           // set deterministically in startGame
+let rainSchedule     = [];          // [{t, x, z, peelId}] pre-generated at event start
+let rainScheduleIdx  = 0;
+let rainEventElapsed = 0;
+const EVENT_ANNOUNCE_S      = 5;
+const RAIN_BANANAS_DURATION = 25;
+const fallingBananas        = [];   // { group, x, z, velY, peelId, rotVX, rotVZ }
 
 const GHOST_KNOCKBACK_H  = 55;
 const GHOST_KNOCKBACK_UP = 16;
@@ -2260,12 +2249,16 @@ function startGame(seed, broadcast) {
   bananaPeels.length = 0;
   ghostPunchCooldown = 0;
   lastHitBy  = null;
-  // Reset random events
-  eventState = 'idle';
-  eventType  = null;
-  eventTimer = 0;
-  nextEventTime = 40 + Math.random() * 20; // first event 40–60 s into the match
-  rainBananaSpawnTimer = 0;
+  // Reset random events — deterministic so every client fires at the same time
+  _gameSeed = seed;
+  _rainPeelBase = 0x40000000;
+  eventState = 'idle'; eventType = null; eventTimer = 0;
+  { // deterministic first-event time derived from seed
+    let s = (seed ^ 0xf00dbeef) >>> 0;
+    s = (Math.imul(s, 1664525) + 1013904223) | 0;
+    nextEventTime = 40 + ((s >>> 0) / 0x100000000) * 25; // 40–65 s
+  }
+  rainSchedule = []; rainScheduleIdx = 0; rainEventElapsed = 0;
   for (const fb of fallingBananas) scene.remove(fb.group);
   fallingBananas.length = 0;
   hideEventAnnouncement();
@@ -2403,32 +2396,73 @@ function hideEventAnnouncement() {
   eventAnnouncementEl.classList.remove('visible');
 }
 
-// Host calls this; broadcasts announcement to all peers.
+// Called independently on every client at the same deterministic game-time.
 function triggerEvent(type) {
   eventState = 'announcing';
   eventType  = type;
   eventTimer = EVENT_ANNOUNCE_S;
   showEventAnnouncement(type);
-  sendGameEvent?.({ type: 'event', event: type, act: 'announce' });
 }
 
 function beginEvent() {
   eventState = 'running';
-  const durations = { rain_bananas: RAIN_BANANAS_DURATION };
-  eventTimer = durations[eventType] ?? 20;
-  rainBananaSpawnTimer = 0; // first banana spawns immediately
+  eventTimer = RAIN_BANANAS_DURATION;
+  rainEventElapsed = 0;
+  rainScheduleIdx  = 0;
   hideEventAnnouncement();
+  if (eventType === 'rain_bananas') rainSchedule = generateRainSchedule();
 }
 
 function endEvent() {
-  eventState    = 'idle';
-  eventType     = null;
-  nextEventTime = gameTime + 30 + Math.random() * 30; // next event in 30–60 s
+  eventState = 'idle';
+  eventType  = null;
+  // Deterministic gap until next event — same result on every client
+  const t = Math.round(gameTime);
+  let s = (_gameSeed ^ (t * 0x9e3779b9)) >>> 0;
+  s = (Math.imul(s, 1664525) + 1013904223) | 0;
+  nextEventTime = gameTime + 30 + ((s >>> 0) / 0x100000000) * 30; // 30–60 s
   hideEventAnnouncement();
 }
 
-// Creates a falling banana visual at (x, z), optionally placing a peel on landing.
-function spawnFallingBananaVisual(x, z, placesPeel) {
+// Pre-generates every banana drop for this rain event using the shared game seed.
+// All clients call this independently and get the exact same schedule.
+function generateRainSchedule() {
+  let s = (_gameSeed ^ 0xbadcafe0) >>> 0;
+  function r() { s = (Math.imul(s, 1664525) + 1013904223) | 0; return (s >>> 0) / 0x100000000; }
+  const schedule = [];
+  const margin   = 3;
+  let peelId     = _rainPeelBase;
+
+  // Big opening burst — 10 bananas in the first 0.3 s
+  for (let b = 0; b < 10; b++) {
+    schedule.push({
+      t:     r() * 0.25,
+      x:     (r() * 2 - 1) * (PLATFORM_HALF - margin),
+      z:     (r() * 2 - 1) * (PLATFORM_HALF - margin),
+      peelId: peelId++,
+    });
+  }
+  // Sustained heavy rain — 4–5 bananas every 1.5 s
+  for (let t = 1.5; t < RAIN_BANANAS_DURATION; t += 1.5) {
+    const count = 4 + Math.floor(r() * 2); // 4 or 5
+    for (let b = 0; b < count; b++) {
+      schedule.push({
+        t:     t + r() * 1.2,
+        x:     (r() * 2 - 1) * (PLATFORM_HALF - margin),
+        z:     (r() * 2 - 1) * (PLATFORM_HALF - margin),
+        peelId: peelId++,
+      });
+    }
+  }
+  schedule.sort((a, b) => a.t - b.t);
+  _rainPeelBase = peelId; // advance pool so the next event gets fresh IDs
+  return schedule;
+}
+
+// Creates a falling banana visual at (x, z).
+// peelId: if not null, a banana peel with this exact ID is placed when the banana lands.
+// Using deterministic IDs means all clients place matching peels without any P2P sync.
+function spawnFallingBananaVisual(x, z, peelId) {
   const g = new THREE.Group();
   g.position.set(x, 22, z);
   g.rotation.set(
@@ -2456,25 +2490,10 @@ function spawnFallingBananaVisual(x, z, placesPeel) {
   g.add(bMeshG);
   scene.add(g);
   fallingBananas.push({
-    group: g, x, z, velY: 0, placesPeel,
+    group: g, x, z, velY: 0, peelId,
     rotVX: (Math.random() - 0.5) * 5,
     rotVZ: (Math.random() - 0.5) * 5,
   });
-}
-
-// Host-only: pick a random platform position, spawn visual + notify peers.
-function spawnFallingBanana() {
-  const margin = 3;
-  for (let tries = 0; tries < 30; tries++) {
-    const x = (Math.random() * 2 - 1) * (PLATFORM_HALF - margin);
-    const z = (Math.random() * 2 - 1) * (PLATFORM_HALF - margin);
-    if (!isTileUnstable(x, z) && getTileAt(x, z)) {
-      spawnFallingBananaVisual(x, z, true);
-      // Tell peers the drop position so they can show the same visual
-      sendGameEvent?.({ type: 'falling_banana', x, z });
-      return;
-    }
-  }
 }
 
 const CAM_DIST   = 5;
@@ -2535,8 +2554,8 @@ function loop(now) {
     // Win condition check (every ~0.5s)
     if (Math.floor(gameTime * 2) !== Math.floor((gameTime - dt) * 2)) checkWinCondition();
 
-    // --- Random event system ---
-    if (eventState === 'idle' && gameTime >= nextEventTime && isHost) {
+    // --- Random event system (deterministic — all clients run in sync via shared seed) ---
+    if (eventState === 'idle' && gameTime >= nextEventTime) {
       triggerEvent('rain_bananas');
     }
     if (eventState === 'announcing') {
@@ -2546,10 +2565,12 @@ function loop(now) {
     if (eventState === 'running') {
       eventTimer -= dt;
       if (eventType === 'rain_bananas') {
-        rainBananaSpawnTimer -= dt;
-        if (isHost && rainBananaSpawnTimer <= 0) {
-          spawnFallingBanana();
-          rainBananaSpawnTimer = RAIN_BANANAS_INTERVAL;
+        rainEventElapsed += dt;
+        // Spawn every banana whose scheduled time has been reached
+        while (rainScheduleIdx < rainSchedule.length &&
+               rainSchedule[rainScheduleIdx].t <= rainEventElapsed) {
+          const entry = rainSchedule[rainScheduleIdx++];
+          spawnFallingBananaVisual(entry.x, entry.z, entry.peelId);
         }
       }
       if (eventTimer <= 0) endEvent();
@@ -2562,13 +2583,13 @@ function loop(now) {
       fb.group.rotation.x += fb.rotVX * dt;
       fb.group.rotation.z += fb.rotVZ * dt;
       if (fb.group.position.y <= 0.1) {
-        // Landed — host places peel and broadcasts it
-        if (fb.placesPeel && !isTileUnstable(fb.x, fb.z) && getTileAt(fb.x, fb.z)) {
-          const id = nextPeelId();
-          const g  = makeBananaPeel(fb.x, fb.z);
-          bananaPeels.push({ group: g, x: fb.x, z: fb.z, id });
-          sendPeel?.({ act: 'place', id, x: fb.x, z: fb.z });
-          window.SFX?.bananaPlace();
+        // Landed — place peel using its deterministic ID (same on every client)
+        if (fb.peelId !== null && !isTileUnstable(fb.x, fb.z) && getTileAt(fb.x, fb.z)) {
+          if (!bananaPeels.some(p => p.id === fb.peelId)) {
+            const g = makeBananaPeel(fb.x, fb.z);
+            bananaPeels.push({ group: g, x: fb.x, z: fb.z, id: fb.peelId });
+            window.SFX?.bananaPlace();
+          }
         }
         scene.remove(fb.group);
         fallingBananas.splice(i, 1);
