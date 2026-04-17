@@ -94,6 +94,48 @@ body > canvas {
   to   { transform: scale(1);   opacity: 1; }
 }
 
+/* Left-side peer lives HUD */
+#peer-lives-hud {
+  position: fixed;
+  left: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.peer-lives-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 7px;
+  padding: 0.28rem 0.55rem 0.32rem;
+  backdrop-filter: blur(6px);
+  min-width: 90px;
+}
+
+.peer-lives-name {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 130px;
+  text-shadow: 0 0 6px currentColor;
+}
+
+.peer-lives-hearts {
+  font-size: 1.05rem;
+  letter-spacing: 1px;
+  filter: drop-shadow(0 1px 4px rgba(0,0,0,0.6));
+}
+
 /* Bottom-centre HUD — lives + durability */
 #bottom-hud {
   position: fixed;

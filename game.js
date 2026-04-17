@@ -1172,6 +1172,7 @@ function removePeer(id) {
   const peer = peers.get(id);
   if (peer) { scene.remove(peer.group); peers.delete(id); }
   updateMenuReadyList();
+  updatePeerLivesHUD();
 }
 
 async function loadTrystero() {
@@ -1311,6 +1312,7 @@ async function setupMultiplayer() {
         if (peer.armorGroup) peer.armorGroup.visible = !!data.hasArmor && !data.isGhost;
         if (data.ready !== undefined) peer.ready = !!data.ready;
         if (gameState === 'lobby') updateMenuReadyList();
+        if (gameState === 'playing') updatePeerLivesHUD();
       }
       refreshPeerCount();
     });
@@ -1576,6 +1578,26 @@ function updateLivesHUD() {
   livesHudEl.textContent = hearts;
 }
 
+const peerLivesHudEl = document.getElementById('peer-lives-hud');
+function updatePeerLivesHUD() {
+  if (!peerLivesHudEl) return;
+  if (gameState !== 'playing') { peerLivesHudEl.innerHTML = ''; return; }
+  let html = '';
+  for (const peer of peers.values()) {
+    const name   = peer.username || '?';
+    const color  = '#' + (peer.pColor || 'ffffff');
+    const maxLives = peer.hasArmor ? 4 : 3;
+    const heartsHtml = peer.isGhost
+      ? '<span style="color:#44aaff;text-shadow:0 0 6px #44aaff">👻 ghost</span>'
+      : '❤️'.repeat(Math.max(0, peer.lives ?? 3)) + '🖤'.repeat(Math.max(0, maxLives - (peer.lives ?? 3)));
+    html += `<div class="peer-lives-row">
+      <span class="peer-lives-name" style="color:${color}">${name}</span>
+      <span class="peer-lives-hearts">${heartsHtml}</span>
+    </div>`;
+  }
+  peerLivesHudEl.innerHTML = html;
+}
+
 function enterGhostMode() {
   isGhost = true;
   isDead  = false;
@@ -1747,6 +1769,7 @@ function returnToLobby() {
   if (_nameInput) _nameInput.value = incoming.username;
   document.exitPointerLock();
   updateLivesHUD();
+  updatePeerLivesHUD();
   // Reset all peers' ready flags from the previous match
   for (const peer of peers.values()) peer.ready = false;
   updateMenuReadyList();
@@ -1794,6 +1817,7 @@ function startGame(seed, broadcast) {
     sendGameEvent?.({ type: 'start', seed });
   }
   updateLivesHUD();
+  updatePeerLivesHUD();
   // Capture pointer
   renderer.domElement.requestPointerLock();
   // game time for tile tracking is handled via gameTime variable in loop
