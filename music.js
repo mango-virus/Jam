@@ -387,6 +387,7 @@
 (function () {
   const VOLUME = 0.38;
   let ctx = null, gainNode = null, source = null, buffer = null;
+  let muted = false, savedVolume = VOLUME;
 
   function ensureCtx() {
     if (!ctx) {
@@ -441,5 +442,16 @@
   }
   autoStart();
 
-  window.MenuMusic = { start, stop };
+  function setVolume(v) {
+    savedVolume = v;
+    if (gainNode && !muted) gainNode.gain.value = v;
+  }
+
+  function toggle() {
+    muted = !muted;
+    if (gainNode) gainNode.gain.value = muted ? 0 : savedVolume;
+    return muted;
+  }
+
+  window.MenuMusic = { start, stop, toggle, setVolume, get muted() { return muted; } };
 })();

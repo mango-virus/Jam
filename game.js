@@ -1534,9 +1534,6 @@ let isLocked = false;
 
 renderer.domElement.addEventListener('click', () => {
   if (gameState === 'playing') renderer.domElement.requestPointerLock();
-  // Start the right music track on first interaction (browser autoplay policy)
-  if (gameState === 'playing') window.GameMusic?.start();
-  else window.MenuMusic?.start();
 });
 
 // Mute button + volume slider
@@ -1545,8 +1542,7 @@ const volumeSlider = document.getElementById('volume-slider');
 
 if (btnMute) {
   btnMute.addEventListener('click', () => {
-    window.GameMusic?.start();
-    const nowMuted = window.GameMusic?.toggle();
+    const nowMuted = window.MenuMusic?.toggle();
     btnMute.textContent = nowMuted ? '🔇' : '🔊';
     if (volumeSlider) volumeSlider.style.opacity = nowMuted ? '0.35' : '1';
   });
@@ -1555,13 +1551,7 @@ if (btnMute) {
 if (volumeSlider) {
   volumeSlider.addEventListener('input', () => {
     const v = volumeSlider.value / 100;
-    window.GameMusic?.start();
-    window.GameMusic?.setVolume(v);
-    // If they turn up the slider while muted, unmute
-    if (v > 0 && window.GameMusic?.muted) {
-      window.GameMusic.toggle();
-      if (btnMute) { btnMute.textContent = '🔊'; volumeSlider.style.opacity = '1'; }
-    }
+    window.MenuMusic?.setVolume(v);
     if (btnMute) btnMute.textContent = v === 0 ? '🔇' : '🔊';
   });
 }
@@ -1980,13 +1970,8 @@ function startGame(seed, broadcast) {
   isDead     = false;
   ghostPunchCooldown = 0;
   lastHitBy  = null;
-  // Pick a random track based on the match seed so all players hear the same one
-  const trackCount = window.GameMusic?.trackCount ?? 1;
-  const trackIdx   = Math.floor(((seed >>> 0) * 1664525 + 1013904223) >>> 0) % trackCount;
   window.MenuMusic?.stop();
   window.GameMusic?.stop();
-  window.GameMusic?.playTrack(trackIdx);
-  window.GameMusic?.start();
   // Clear any leftover items and reset spawn timer
   for (const it of groundItems) scene.remove(it.group);
   groundItems.length = 0;
