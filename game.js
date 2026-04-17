@@ -5378,7 +5378,7 @@ function loop(now) {
     const ppx = playerGroup.position.x, ppz = playerGroup.position.z;
     for (let i = bananaPeels.length - 1; i >= 0; i--) {
       const peel = bananaPeels[i];
-      if (Math.hypot(ppx - peel.x, ppz - peel.z) < PEEL_PICKUP_R) {
+      if (Math.hypot(ppx - peel.x, ppz - peel.z) < PEEL_PICKUP_R && playerGroup.position.y < 0.8) {
         // Slip!
         isSlipping = true;
         slipTimer = 0.65;
