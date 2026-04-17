@@ -353,6 +353,75 @@ for (let row = 0; row < TILE_ROWS; row++) {
   }
 }
 
+// ── Tile crack / fragment system ────────────────────────────────────────────
+const tileFragments = []; // { mesh, mat, velX, velY, velZ, rotVelX, rotVelZ, life }
+
+function addTileCracks(t) {
+  // 5 thin crack-line meshes as children of the tile, sitting on its top surface (local y ≈ 2.04)
+  const crackDefs = [
+    { w: tileSize * 0.62, d: 0.14, x:  0,    z:  0,    ry:  0.30, thresh: 0.00 },
+    { w: tileSize * 0.50, d: 0.14, x:  1.6,  z:  1.4,  ry:  1.10, thresh: 0.25 },
+    { w: tileSize * 0.40, d: 0.12, x: -2.0,  z:  1.0,  ry:  0.60, thresh: 0.45 },
+    { w: tileSize * 0.45, d: 0.12, x:  1.0,  z: -2.0,  ry: -0.50, thresh: 0.60 },
+    { w: tileSize * 0.35, d: 0.10, x: -1.0,  z: -1.5,  ry:  1.50, thresh: 0.75 },
+  ];
+  t.cracks = [];
+  for (const cd of crackDefs) {
+    const mat = new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 1, transparent: true, opacity: 0 });
+    const m = new THREE.Mesh(new THREE.BoxGeometry(cd.w, 0.08, cd.d), mat);
+    m.position.set(cd.x, 2.04, cd.z);
+    m.rotation.y = cd.ry;
+    m.userData.thresh = cd.thresh;
+    t.mesh.add(m);
+    t.cracks.push(m);
+  }
+}
+
+function breakTileIntoFragments(t) {
+  t.mesh.visible = false;
+  const hw  = (tileSize - 0.12) * 0.5;
+  const th  = 4.05;
+  const mat = new THREE.MeshStandardMaterial({ color: t.solidColor.clone().multiplyScalar(0.55), roughness: 0.9, metalness: 0.05 });
+  // 4 corner chunks + 1 centre chunk
+  const fragDefs = [
+    { ox: -hw * 0.5, oz: -hw * 0.5 },
+    { ox:  hw * 0.5, oz: -hw * 0.5 },
+    { ox: -hw * 0.5, oz:  hw * 0.5 },
+    { ox:  hw * 0.5, oz:  hw * 0.5 },
+    { ox:  0,        oz:  0         },
+  ];
+  const wx = t.mesh.position.x;
+  const wy = t.mesh.position.y + th * 0.5; // top of tile
+  const wz = t.mesh.position.z;
+  for (const fd of fragDefs) {
+    const fw = hw * 0.88;
+    const fh = th * (0.35 + Math.random() * 0.25);
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(fw, fh, fw), mat);
+    mesh.position.set(wx + fd.ox, wy, wz + fd.oz);
+    const nx = fd.ox === 0 ? (Math.random() - 0.5) : Math.sign(fd.ox);
+    const nz = fd.oz === 0 ? (Math.random() - 0.5) : Math.sign(fd.oz);
+    const spd = 3 + Math.random() * 3;
+    scene.add(mesh);
+    tileFragments.push({
+      mesh,
+      velX:   nx * spd,
+      velY:   1.8 + Math.random() * 3.2,
+      velZ:   nz * spd,
+      rotVelX: (Math.random() - 0.5) * 5,
+      rotVelZ: (Math.random() - 0.5) * 5,
+      life:   TILE_SINK_S + 0.6,
+    });
+  }
+}
+
+function cleanupTileBreak(t) {
+  if (t.cracks) {
+    for (const c of t.cracks) { t.mesh.remove(c); c.geometry.dispose(); c.material.dispose(); }
+    t.cracks = null;
+  }
+  t.mesh.rotation.set(0, 0, 0);
+}
+
 // Build initial arena layout for the lobby view (tileObjects now populated)
 rebuildArena(42);
 
@@ -2660,7 +2729,9 @@ function returnToLobby() {
   hasArmor = localStorage.getItem('arenaHasArmor') === '1';
   playerArmorGroup.visible = hasArmor;
   // Reset tiles and restore platform
-  for (const t of tileObjects) { t.state = 'solid'; t.timer = 0; t.mesh.visible = false; t.mesh.position.y = -2; t.mesh.material.color.copy(t.solidColor); }
+  for (const t of tileObjects) { cleanupTileBreak(t); t.state = 'solid'; t.timer = 0; t.mesh.visible = false; t.mesh.position.y = -2; t.mesh.material.color.copy(t.solidColor); }
+  for (const _f of tileFragments) { scene.remove(_f.mesh); _f.mesh.geometry.dispose(); }
+  tileFragments.length = 0;
   tileDropIndex = 0;
   gameTime = 0;
   platform.visible = true;
@@ -2773,7 +2844,9 @@ function startGame(seed, broadcast) {
   tileDropIndex  = 0;
   nextTileTime   = TILE_GRACE_S;
   // Show tiles using this round's solid colour
-  for (const t of tileObjects) { t.state = 'solid'; t.timer = 0; t.mesh.visible = true; t.mesh.position.y = -2; t.mesh.material.color.copy(t.solidColor); }
+  for (const _f of tileFragments) { scene.remove(_f.mesh); _f.mesh.geometry.dispose(); }
+  tileFragments.length = 0;
+  for (const t of tileObjects) { cleanupTileBreak(t); t.state = 'solid'; t.timer = 0; t.mesh.visible = true; t.mesh.position.y = -2; t.mesh.material.color.copy(t.solidColor); }
   // Hide main platform mesh so tiles take over visually
   platform.visible = false;
   // Spawn player on center pillar
@@ -4319,22 +4392,58 @@ function loop(now) {
       if (t === gumballFrozenTile) continue; // machine is sitting on this tile — keep it solid
       if (t.state === 'warning') {
         t.timer -= dt;
-        // Flash the tile between warning orange and the round's solid colour
-        const flash = Math.sin(t.timer * 14) > 0;
-        if (flash) t.mesh.material.color.set(0xff4400);
-        else t.mesh.material.color.copy(t.solidColor);
+        const progress = 1 - t.timer / TILE_WARN_S; // 0 → 1
+
+        // Progressive darkening — no flashing
+        t.mesh.material.color.copy(t.solidColor).lerp(new THREE.Color(0x0d0a04), progress * 0.85);
+
+        // Add crack meshes on the first warning frame
+        if (!t.cracks) addTileCracks(t);
+
+        // Reveal each crack line when progress crosses its threshold
+        for (const c of t.cracks) {
+          if (progress >= c.userData.thresh) {
+            const fadeIn = Math.min(1, (progress - c.userData.thresh) / 0.12);
+            c.material.opacity = fadeIn * 0.88;
+          }
+        }
+
+        // Wobble amplitude grows with progress
+        const wobble = progress * 0.045;
+        t.mesh.rotation.z = Math.sin(time * 20) * wobble;
+        t.mesh.rotation.x = Math.cos(time * 16) * wobble * 0.6;
+
         if (t.timer <= 0) {
-          t.state = 'sinking'; t.timer = TILE_SINK_S; t.mesh.material.color.set(0x220800);
-          // Drop the player if they're standing on this tile
+          t.state = 'breaking';
+          t.timer = TILE_SINK_S;
+          cleanupTileBreak(t);
+          breakTileIntoFragments(t);
+          // Drop the player if they were standing on this tile
           if (onGround && getTileAt(playerGroup.position.x, playerGroup.position.z) === t) {
             onGround = false;
           }
         }
-      } else if (t.state === 'sinking') {
+      } else if (t.state === 'breaking') {
         t.timer -= dt;
-        t.mesh.position.y = -2 - (1 - t.timer / TILE_SINK_S) * 6;
-        if (t.timer <= 0) { t.state = 'gone'; t.mesh.visible = false; }
+        if (t.timer <= 0) { t.state = 'gone'; }
       }
+    }
+    // ── Tile fragment physics ─────────────────────────────────────────
+    for (let _fi = tileFragments.length - 1; _fi >= 0; _fi--) {
+      const _f = tileFragments[_fi];
+      _f.life -= dt;
+      if (_f.life <= 0) {
+        scene.remove(_f.mesh);
+        _f.mesh.geometry.dispose();
+        tileFragments.splice(_fi, 1);
+        continue;
+      }
+      _f.velY -= GRAVITY * dt;
+      _f.mesh.position.x += _f.velX * dt;
+      _f.mesh.position.y += _f.velY * dt;
+      _f.mesh.position.z += _f.velZ * dt;
+      _f.mesh.rotation.x += _f.rotVelX * dt;
+      _f.mesh.rotation.z += _f.rotVelZ * dt;
     }
     // Ghost punch cooldown
     if (isGhost && ghostPunchCooldown > 0) ghostPunchCooldown -= dt;
