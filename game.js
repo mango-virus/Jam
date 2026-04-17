@@ -193,23 +193,7 @@ function rebuildArena(seed) {
     occupied.push({ x, z, r: w/2 + 0.5 });
   }
 
-  function spawnWatchtower(x, z) {
-    const hue = rand();
-    const stemH = 4 + rand() * 4, stemW = 0.7;
-    const capW = 4.0 + rand() * 2.0, capH = 0.6;
-    // Stem
-    addMesh(new THREE.CylinderGeometry(stemW/2, stemW/2, stemH, 8), mat(hue, 0.2), x, stemH/2, z);
-    addPillarCol(x, z, stemW/2, stemH);
-    // Cap platform
-    addMesh(new THREE.BoxGeometry(capW, capH, capW), mat(hue, 0.3), x, stemH + capH/2, z);
-    addEP(x, z, capW/2, capW/2, stemH + capH);
-    // Finial spike on top
-    addMesh(new THREE.ConeGeometry(0.25, 1.2, 6), mat(hue, 0.45), x, stemH + capH + 0.6, z);
-    addGlow(x, stemH + capH + 1, z, hue, 1.2, 8);
-    occupied.push({ x, z, r: capW/2 });
-  }
-
-  function spawnArch(x, z) {
+function spawnArch(x, z) {
     const hue = rand();
     const legH = 3.5 + rand() * 3, legW = 0.9;
     const span = 5.0 + rand() * 3;
@@ -246,18 +230,7 @@ function rebuildArena(seed) {
     occupied.push({ x, z, r: stepD * steps * 0.6 });
   }
 
-  function spawnLowWall(x, z) {
-    const hue = rand();
-    const len = 6 + rand() * 7, h = 0.7 + rand() * 0.8, thick = 0.9;
-    const angle = rand() * Math.PI;
-    addMesh(new THREE.BoxGeometry(len, h, thick), mat(hue, 0.18), x, h/2, z, angle);
-    // Store local OBB extents + angle so tests work against the
-    // actual rotated box, not an over-inflated world AABB.
-    addEP(x, z, len/2, thick/2, h, angle);
-    occupied.push({ x, z, r: len/2 });
-  }
-
-  function spawnRuinCluster(x, z) {
+function spawnRuinCluster(x, z) {
     const hue = rand();
     const count = 2 + Math.floor(rand() * 3);
     const baseAngle = rand() * Math.PI * 2;
@@ -318,35 +291,8 @@ function rebuildArena(seed) {
     occupied.push({ x, z, r: baseW/2 });
   }
 
-  function spawnToppledColumn(x, z) {
-    const hue = rand();
-    const ph  = 4.0 + rand() * 5.0; // length of the column
-    const pw  = 0.8 + rand() * 0.8; // diameter
-    const r   = pw / 2;
-    const angle = rand() * Math.PI; // which direction it's fallen
-
-    // Visual: cylinder lying on its side
-    // Three.js Euler XYZ: matrix = Rx * Ry * Rz
-    // Setting rotation.z = PI/2 topples it along X, then rotation.y = angle spins direction.
-    const m = new THREE.Mesh(
-      new THREE.CylinderGeometry(r, r, ph, 8),
-      mat(hue, 0.18));
-    m.position.set(x, r, z);     // center sits at radius height off the ground
-    m.rotation.y = angle;
-    m.rotation.z = Math.PI / 2;  // topple it
-    m.castShadow = true; m.receiveShadow = true;
-    scene.add(m); pillarMeshes.push(m);
-
-    // Store local OBB extents + angle: ph/2 along the column axis,
-    // r perpendicular. OBB test will rotate the query point into local
-    // frame so the hitbox matches the actual column, not an inflated AABB.
-    addEP(x, z, ph/2, r, pw, angle); // topY = pw (diameter = highest walkable point)
-
-    occupied.push({ x, z, r: ph / 2 });
-  }
-
-  // ── Place structures ─────────────────────────────────────────────
-  const TYPES = ['pillar','pillar','watchtower','arch','staircase','lowwall','ruins','obelisk','crystal','monument','toppled','toppled'];
+// ── Place structures ─────────────────────────────────────────────
+  const TYPES = ['pillar','pillar','arch','staircase','ruins','ruins','obelisk','crystal','monument','monument'];
   const count = 14 + Math.floor(rand() * 7); // 14–20 structures
 
   for (let i = 0; i < count; i++) {
@@ -356,16 +302,13 @@ function rebuildArena(seed) {
     const pos = rndPos(margin, footprint);
     if (!pos) continue;
     const { x, z } = pos;
-    if      (type === 'pillar')     spawnPillar(x, z);
-    else if (type === 'watchtower') spawnWatchtower(x, z);
-    else if (type === 'arch')       spawnArch(x, z);
-    else if (type === 'staircase')  spawnStaircase(x, z);
-    else if (type === 'lowwall')    spawnLowWall(x, z);
-    else if (type === 'ruins')      spawnRuinCluster(x, z);
-    else if (type === 'obelisk')    spawnObelisk(x, z);
-    else if (type === 'crystal')    spawnCrystalCluster(x, z);
-    else if (type === 'monument')   spawnMonument(x, z);
-    else if (type === 'toppled')    spawnToppledColumn(x, z);
+    if      (type === 'pillar')    spawnPillar(x, z);
+    else if (type === 'arch')      spawnArch(x, z);
+    else if (type === 'staircase') spawnStaircase(x, z);
+    else if (type === 'ruins')     spawnRuinCluster(x, z);
+    else if (type === 'obelisk')   spawnObelisk(x, z);
+    else if (type === 'crystal')   spawnCrystalCluster(x, z);
+    else if (type === 'monument')  spawnMonument(x, z);
   }
 
   // --- Randomise tile base colour ---
