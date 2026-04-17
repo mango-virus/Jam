@@ -3641,7 +3641,8 @@ function loop(now) {
     }
     // Flicker in the last 3 seconds to warn players it's about to vanish
     it.group.visible = timeLeft < 3 ? Math.sin(time * 18) > 0 : true;
-    it.group.position.y = 0.1 + Math.sin(time * 2.5 + it.x) * 0.08;
+    const itemBaseY = it.type === 'sword' ? 0.22 : 0.1;
+    it.group.position.y = itemBaseY + Math.sin(time * 2.5 + it.x) * 0.08;
     it.group.rotation.y += dt * 1.2;
   }
 
