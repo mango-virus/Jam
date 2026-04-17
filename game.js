@@ -3334,7 +3334,10 @@ function loop(now) {
 
     // --- Random event system (deterministic — all clients run in sync via shared seed) ---
     if (eventState === 'idle' && gameTime >= nextEventTime) {
-      triggerEvent(EVENT_TYPES[eventCount % EVENT_TYPES.length]);
+      // Pick event type randomly but deterministically so all clients agree
+      let _es = (_gameSeed ^ (0xe0e00000 + eventCount * 0x9e3779b9)) >>> 0;
+      _es = (Math.imul(_es, 1664525) + 1013904223) | 0;
+      triggerEvent(EVENT_TYPES[(_es >>> 0) % EVENT_TYPES.length]);
     }
     if (eventState === 'announcing') {
       eventTimer -= dt;
