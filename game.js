@@ -2237,6 +2237,21 @@ const RAIN_BANANAS_DURATION = 25;
 const fallingBananas        = [];   // { group, x, z, velY, peelId, rotVX, rotVZ }
 let eventCount              = 0;    // increments each time an event ends (for cycling)
 const EVENT_TYPES           = ['loot_goblin', 'clouds_alive', 'rain_bananas', 'lava_floor', 'hot_potato', 'gumball_cannon'];
+let eventDeck               = [];   // shuffled event order — no repeats until full cycle done
+let eventDeckIdx            = 0;
+
+// Deterministic Fisher-Yates shuffle of EVENT_TYPES using the shared game seed.
+// deckNum increments each full cycle so each pass is shuffled differently.
+function buildEventDeck(deckNum) {
+  let s = (_gameSeed ^ (0xdec10000 + deckNum * 0x7654321)) >>> 0;
+  function r() { s = (Math.imul(s, 1664525) + 1013904223) | 0; return (s >>> 0) / 0x100000000; }
+  const deck = [...EVENT_TYPES];
+  for (let i = deck.length - 1; i > 0; i--) {
+    const j = Math.floor(r() * (i + 1));
+    [deck[i], deck[j]] = [deck[j], deck[i]];
+  }
+  return deck;
+}
 
 // --- Hot Potato event state ---
 let hotPotatoHolder    = null;   // 'local' | peer_id | null
@@ -2660,7 +2675,7 @@ function returnToLobby() {
   isSlipping = false; slipTimer = 0; bananaImmunityTimer = 0;
   // Clean up random events
   eventState = 'idle'; eventType = null; eventTimer = 0; eventLingerTimer = 0;
-  eventCount = 0;
+  eventCount = 0; eventDeck = []; eventDeckIdx = 0;
   for (const fb of fallingBananas) scene.remove(fb.group);
   fallingBananas.length = 0;
   despawnCloud(); despawnGoblin(); despawnLava(); despawnHotPotato(); despawnGumballMachine();
@@ -2737,6 +2752,7 @@ function startGame(seed, broadcast) {
   for (const fb of fallingBananas) scene.remove(fb.group);
   fallingBananas.length = 0;
   eventCount = 0;
+  eventDeck = buildEventDeck(0); eventDeckIdx = 0;
   despawnCloud(); despawnGoblin(); despawnLava(); despawnHotPotato(); despawnGumballMachine();
   clearWindStreaks();
   lavaSavedTileTimeLeft = 0;
@@ -4344,16 +4360,14 @@ function loop(now) {
     }
 
     // --- Random event system (deterministic — all clients run in sync via shared seed) ---
+    // Events are drawn from a shuffled deck so every event appears once per cycle.
     if (eventState === 'idle' && gameTime >= nextEventTime) {
-      let nextType;
-      if (eventCount === 0) {
-        nextType = 'gumball_cannon'; // force first event for testing
-      } else {
-        let _es = (_gameSeed ^ (0xe0e00000 + eventCount * 0x9e3779b9)) >>> 0;
-        _es = (Math.imul(_es, 1664525) + 1013904223) | 0;
-        nextType = EVENT_TYPES[(_es >>> 0) % EVENT_TYPES.length];
+      if (eventDeckIdx >= eventDeck.length) {
+        // Finished a full cycle — reshuffle for the next one
+        eventDeck    = buildEventDeck(Math.floor(eventCount / EVENT_TYPES.length));
+        eventDeckIdx = 0;
       }
-      triggerEvent(nextType);
+      triggerEvent(eventDeck[eventDeckIdx++]);
     }
     if (eventState === 'announcing') {
       eventTimer -= dt;
