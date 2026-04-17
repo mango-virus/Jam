@@ -1745,16 +1745,42 @@ const activeEffects = [];
 const durabilityEl = document.getElementById('durability');
 
 // Safe random position on the platform (away from edges, pillars, other items, unstable tiles).
-// Returns null if no valid spot found.
+// Returns { x, z, surfaceY } or null if no valid spot found.
+// ~30 % of spawns land on top of a structure surface when structures are present.
 function randomItemPos() {
   const margin = 3;
+
+  // Try to place on a structure surface (~30 % of the time)
+  if (elevatedPlatforms.length > 0 && Math.random() < 0.3) {
+    // Only consider EPs that are wide enough to land an item on
+    const validEPs = elevatedPlatforms.filter(ep =>
+      !ep.surfaceOnly && ep.topY > 0.5 && ep.hw >= 0.5 && ep.hd >= 0.5
+    );
+    if (validEPs.length > 0) {
+      for (let tries = 0; tries < 20; tries++) {
+        const ep = validEPs[Math.floor(Math.random() * validEPs.length)];
+        // Random point inside the EP footprint with a small inset margin
+        const inner = 0.4;
+        const lx = (Math.random() * 2 - 1) * Math.max(0.05, ep.hw - inner);
+        const lz = (Math.random() * 2 - 1) * Math.max(0.05, ep.hd - inner);
+        // Rotate into world space
+        const ca = Math.cos(ep.angle ?? 0), sa = Math.sin(ep.angle ?? 0);
+        const wx = ep.x + lx * ca - lz * sa;
+        const wz = ep.z + lx * sa + lz * ca;
+        const overlap = groundItems.some(it => Math.hypot(wx - it.x, wz - it.z) < 1.5);
+        if (!overlap) return { x: wx, z: wz, surfaceY: ep.topY };
+      }
+    }
+  }
+
+  // Ground-level placement
   for (let tries = 0; tries < 40; tries++) {
     const x = (Math.random() * 2 - 1) * (PLATFORM_HALF - margin);
     const z = (Math.random() * 2 - 1) * (PLATFORM_HALF - margin);
     const tooClose = pillarData.some(p => Math.hypot(x - p.x, z - p.z) < 2.5);
     const overlap  = groundItems.some(it => Math.hypot(x - it.x, z - it.z) < 2.0);
     const badTile  = isTileUnstable(x, z) || isTileGone(x, z);
-    if (!tooClose && !overlap && !badTile) return { x, z };
+    if (!tooClose && !overlap && !badTile) return { x, z, surfaceY: 0 };
   }
   return null;
 }
@@ -5343,9 +5369,9 @@ function loop(now) {
     if (pos) {
       const r = Math.random();
       const type = r < 0.15 ? 'sword' : r < 0.30 ? 'shield' : r < 0.44 ? 'glove' : r < 0.57 ? 'bat' : r < 0.72 ? 'boots' : r < 0.87 ? 'banana' : 'grenade';
-      const it = makeGroundItem(type, pos.x, pos.z);
+      const it = makeGroundItem(type, pos.x, pos.z, undefined, pos.surfaceY ?? 0);
       groundItems.push(it);
-      sendItemEvent?.({ act: 'spawn', id: it.id, type: it.type, x: it.x, z: it.z });
+      sendItemEvent?.({ act: 'spawn', id: it.id, type: it.type, x: it.x, z: it.z, y: it.surfaceY ?? 0 });
     }
   }
 
