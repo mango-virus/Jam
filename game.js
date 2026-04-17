@@ -2339,7 +2339,7 @@ function addPeer(id, data) {
   char.group.rotation.y = data.rotY ?? 0;
   char.group.visible = !data.spectating;
   scene.add(char.group);
-  peers.set(id, { ...char, tx: data.x ?? 0, ty: data.y ?? 0, tz: data.z ?? 0, rotY: data.rotY ?? 0, moving: false, swing: 0, punchTimer: 0, blocking: false, username: data.username, redrawLabel, pSword: !!data.sword, pGlove: !!data.glove, pBat: !!data.bat, pBoots: !!data.boots, pShield: !!data.shield, pBanana: !!data.banana, pColor: data.color || 'ffffff', lives: data.lives ?? 3, isGhost: !!data.isGhost, hasArmor: !!data.hasArmor, ready: !!data.ready, pBubble: !!data.bubble, bubbleMesh: null, inMatch: !!data.inMatch });
+  peers.set(id, { ...char, tx: data.x ?? 0, ty: data.y ?? 0, tz: data.z ?? 0, rotY: data.rotY ?? 0, moving: false, swing: 0, punchTimer: 0, blocking: false, username: data.username, redrawLabel, pSword: !!data.sword, pGlove: !!data.glove, pBat: !!data.bat, pBoots: !!data.boots, pShield: !!data.shield, pBanana: !!data.banana, pColor: data.color || 'ffffff', lives: data.lives ?? 3, isGhost: !!data.isGhost, hasArmor: !!data.hasArmor, ready: !!data.ready, pBubble: !!data.bubble, bubbleMesh: null, inMatch: !!data.inMatch, spectating: !!data.spectating });
   updateMenuReadyList();
 }
 
@@ -2568,7 +2568,10 @@ async function setupMultiplayer() {
           }
         }
         if (data.inMatch !== undefined) peer.inMatch = !!data.inMatch;
-        if (data.spectating !== undefined) peer.group.visible = !data.spectating;
+        if (data.spectating !== undefined) {
+          peer.spectating = !!data.spectating;
+          peer.group.visible = !data.spectating;
+        }
         if (gameState === 'lobby') { updateMenuReadyList(); updateMenuSpectateBtn(); }
         if (gameState === 'playing') updatePeerLivesHUD();
         // If spectating and our target left the match, auto-switch
@@ -3046,6 +3049,7 @@ function updatePeerLivesHUD() {
   if (gameState !== 'playing') { peerLivesHudEl.innerHTML = ''; return; }
   let html = '';
   for (const peer of peers.values()) {
+    if (peer.spectating) continue; // spectators have no lives to display
     const name   = peer.username || '?';
     const color  = '#' + (peer.pColor || 'ffffff');
     const maxLives = peer.hasArmor ? 4 : 3;
