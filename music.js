@@ -387,7 +387,11 @@
 (function () {
   const VOLUME = 0.19;
   let ctx = null, gainNode = null, source = null, buffer = null;
-  let muted = false, savedVolume = VOLUME;
+  let muted = false, savedVolume = VOLUME, duckMult = 1.0;
+
+  function applyGain() {
+    if (gainNode && !muted) gainNode.gain.value = savedVolume * duckMult;
+  }
 
   function ensureCtx() {
     if (!ctx) {
@@ -432,14 +436,24 @@
 
   function setVolume(v) {
     savedVolume = v;
-    if (gainNode && !muted) gainNode.gain.value = v;
+    applyGain();
+  }
+
+  function duck(mult) {
+    duckMult = mult;
+    applyGain();
+  }
+
+  function unduck() {
+    duckMult = 1.0;
+    applyGain();
   }
 
   function toggle() {
     muted = !muted;
-    if (gainNode) gainNode.gain.value = muted ? 0 : savedVolume;
+    if (gainNode) gainNode.gain.value = muted ? 0 : savedVolume * duckMult;
     return muted;
   }
 
-  window.MenuMusic = { start, stop, toggle, setVolume, get muted() { return muted; } };
+  window.MenuMusic = { start, stop, toggle, setVolume, duck, unduck, get muted() { return muted; } };
 })();
