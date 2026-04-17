@@ -565,6 +565,81 @@
     o2.start(t); o2.stop(t + 0.12);
   }
 
+  // ── BOMB TICK — sharp metallic click ───────────────────────────
+  function bombTick() {
+    ensureCtx(); resume();
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(2400, t);
+    o.frequency.exponentialRampToValueAtTime(900, t + 0.03);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.22, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.045);
+    o.connect(g); g.connect(master);
+    o.start(t); o.stop(t + 0.05);
+    // Tiny noise click layer
+    const src = ctx.createBufferSource(); src.buffer = noise(0.04);
+    const hp  = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 3000;
+    const g2  = ctx.createGain();
+    g2.gain.setValueAtTime(0.12, t); g2.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+    src.connect(hp); hp.connect(g2); g2.connect(master);
+    src.start(t); src.stop(t + 0.045);
+  }
+
+  // ── BOMB PASS — quick electric zap / transfer ───────────────────
+  function bombPass() {
+    ensureCtx(); resume();
+    const t = ctx.currentTime;
+    // Rising chirp
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(350, t);
+    o.frequency.exponentialRampToValueAtTime(1600, t + 0.1);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2200;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.28, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.13);
+    o.connect(lp); lp.connect(g); g.connect(master);
+    o.start(t); o.stop(t + 0.14);
+    // Snap transient
+    const src = ctx.createBufferSource(); src.buffer = noise(0.05);
+    const bp  = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2800; bp.Q.value = 1.5;
+    const g2  = ctx.createGain();
+    g2.gain.setValueAtTime(0.35, t); g2.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+    src.connect(bp); bp.connect(g2); g2.connect(master);
+    src.start(t); src.stop(t + 0.065);
+  }
+
+  // ── BOMB EXPLODE — big concussive blast ─────────────────────────
+  function bombExplode() {
+    ensureCtx(); resume();
+    const t = ctx.currentTime;
+    // Broadband noise burst — main body of explosion
+    const src = ctx.createBufferSource(); src.buffer = noise(0.9);
+    const lp  = ctx.createBiquadFilter(); lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(5000, t);
+    lp.frequency.exponentialRampToValueAtTime(300, t + 0.7);
+    const g1 = ctx.createGain();
+    g1.gain.setValueAtTime(1.3, t); g1.gain.exponentialRampToValueAtTime(0.001, t + 0.85);
+    src.connect(lp); lp.connect(g1); g1.connect(master);
+    src.start(t); src.stop(t + 0.9);
+    // Bass thud — sub frequency punch
+    const o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(130, t);
+    o.frequency.exponentialRampToValueAtTime(28, t + 0.45);
+    const g2 = ctx.createGain();
+    g2.gain.setValueAtTime(1.0, t); g2.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+    o.connect(g2); g2.connect(master);
+    o.start(t); o.stop(t + 0.55);
+    // High crackle / debris
+    const src2 = ctx.createBufferSource(); src2.buffer = noise(0.3);
+    const hp   = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 3500;
+    const g3   = ctx.createGain();
+    g3.gain.setValueAtTime(0.55, t + 0.04); g3.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+    src2.connect(hp); hp.connect(g3); g3.connect(master);
+    src2.start(t + 0.04); src2.stop(t + 0.38);
+  }
+
   // ── LAVA BURN — sizzle + low rumble when touching lava ──────────
   function lavaBurn() {
     ensureCtx(); resume();
@@ -599,5 +674,5 @@
     src2.start(t + 0.05); src2.stop(t + 0.3);
   }
 
-  window.SFX = { punch, swordHit, gloveHit, batNormal, batHomeRun, shieldBlock, shieldBreak, itemBreak, pickup, die, respawn, ghostPunch, swordSwing, gloveSwing, batSwing, rocketBoost, bananaPlace, bananaSlip, windGust, goblinDrop, lavaBurn };
+  window.SFX = { punch, swordHit, gloveHit, batNormal, batHomeRun, shieldBlock, shieldBreak, itemBreak, pickup, die, respawn, ghostPunch, swordSwing, gloveSwing, batSwing, rocketBoost, bananaPlace, bananaSlip, windGust, goblinDrop, lavaBurn, bombTick, bombPass, bombExplode };
 })();

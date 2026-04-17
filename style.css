@@ -88,6 +88,12 @@ body > canvas {
   text-shadow: 0 0 40px rgba(255,120,0,0.9), 0 0 80px rgba(255,60,0,0.5);
 }
 
+/* Bomb explosion death — bright orange-yellow */
+#death-msg.explode span {
+  color: #ffcc00;
+  text-shadow: 0 0 40px rgba(255,180,0,0.95), 0 0 80px rgba(255,100,0,0.6);
+}
+
 #durability {
   font-size: 1.5rem;
   letter-spacing: 2px;

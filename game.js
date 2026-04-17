@@ -1689,6 +1689,7 @@ async function setupMultiplayer() {
     setPeerStatus('connecting…');
     const { joinRoom } = await loadTrystero();
     room = joinRoom({ appId: 'ordinary-game-jam-3d-space' }, 'main-room');
+    localPeerId = room.selfId ?? null;
     const [send, getState] = room.makeAction('state');
     sendState = send;
     const [sPunch, onPunch] = room.makeAction('punch');
@@ -1776,6 +1777,15 @@ async function setupMultiplayer() {
           groundItems.splice(idx, 1);
         }
       }
+    });
+
+    const [sBomb, onBombPass] = room.makeAction('bomb');
+    sendBombPass = sBomb;
+    onBombPass(({ to }, fromPeerId) => {
+      if (eventType !== 'hot_potato') return;
+      // 'to' is the new holder's peer ID; check if that's us
+      hotPotatoHolder = (localPeerId && to === localPeerId) ? 'local' : to;
+      window.SFX?.bombPass();
     });
 
     room.onPeerJoin((peerId) => {
@@ -2011,14 +2021,17 @@ let velY        = 0;
 let velX        = 0;   // horizontal knockback
 let velZ        = 0;
 let onGround    = true;
-let hasFallenOff  = false; // true once player drops below platform surface — no landing allowed
-let isDead        = false;
-let deathTimer    = 0;
-let homeRunDeath  = false; // true when death was caused by a home-run bat hit
-let burnDeath     = false; // true when death was caused by lava
+let hasFallenOff   = false; // true once player drops below platform surface — no landing allowed
+let isDead         = false;
+let deathTimer     = 0;
+let homeRunDeath   = false; // true when death was caused by a home-run bat hit
+let burnDeath      = false; // true when death was caused by lava
+let explosionDeath = false; // true when death was caused by hot-potato bomb
 let spawnImmunityTimer = 0; // >0 = immune to knockback and death after respawning
 let punchTimer  = 0; // >0 while punch animation playing
-let sendPunch   = null;
+let sendPunch     = null;
+let sendBombPass  = null; // network action for hot-potato bomb pass
+let localPeerId   = null; // our own Trystero peer ID
 
 // --- Game mode state ---
 let gameState          = 'lobby';   // 'lobby' | 'playing' | 'gameover'
@@ -2050,7 +2063,15 @@ const EVENT_ANNOUNCE_LINGER = 5;    // extra seconds announcement stays up once 
 const RAIN_BANANAS_DURATION = 25;
 const fallingBananas        = [];   // { group, x, z, velY, peelId, rotVX, rotVZ }
 let eventCount              = 0;    // increments each time an event ends (for cycling)
-const EVENT_TYPES           = ['loot_goblin', 'clouds_alive', 'rain_bananas', 'lava_floor'];
+const EVENT_TYPES           = ['loot_goblin', 'clouds_alive', 'rain_bananas', 'lava_floor', 'hot_potato'];
+
+// --- Hot Potato event state ---
+let hotPotatoHolder    = null;   // 'local' | peer_id | null
+let hotPotatoTimer     = 0;      // countdown to explosion
+let hotPotatoMaxTime   = 0;      // total fuse duration (randomised per match)
+let hotPotatoBomb      = null;   // { group, sphere, spark, light }
+let hotPotatoTickTimer = 0;      // time until next tick SFX
+const explosionEffects = [];     // [fn(dt)] transient explosion animations
 
 // --- Lava Floor event constants ---
 const LAVA_RISE_TIME  = 8.0;   // seconds lava takes to reach tile surface
@@ -2297,11 +2318,14 @@ function die(opts = {}) {
   if (isDead || isGhost) return;
   if (spawnImmunityTimer > 0) return; // immune after respawn
   dropItemsOnDeath();
-  isDead = true;
-  homeRunDeath = !!opts.homeRun;
-  burnDeath    = !!opts.burn;
+  isDead         = true;
+  homeRunDeath   = !!opts.homeRun;
+  burnDeath      = !!opts.burn;
+  explosionDeath = !!opts.explode;
   deathTimer = homeRunDeath ? 4.0 : 2.0;
-  if (burnDeath) window.SFX?.lavaBurn(); else window.SFX?.die();
+  if (explosionDeath)   window.SFX?.bombExplode();
+  else if (burnDeath)   window.SFX?.lavaBurn();
+  else                  window.SFX?.die();
   if (!homeRunDeath) {
     velY = 0; velX = 0; velZ = 0; windVelX = 0; windVelZ = 0;
     hasFallenOff = true; // prevent physics re-landing
@@ -2324,9 +2348,14 @@ function die(opts = {}) {
     updateLivesHUD();
   }
   if (deathEl) {
-    deathEl.classList.toggle('burn', burnDeath);
-    if (deathMsgSpan) deathMsgSpan.textContent = homeRunDeath ? '⚾ HOME RUN!' : burnDeath ? '🔥 YOU BURNED' : 'YOU FELL';
-    if (deathMsgSub)  deathMsgSub.textContent  = 'respawning…';
+    deathEl.classList.toggle('burn',    burnDeath);
+    deathEl.classList.toggle('explode', explosionDeath);
+    if (deathMsgSpan) deathMsgSpan.textContent =
+      homeRunDeath   ? '⚾ HOME RUN!' :
+      burnDeath      ? '🔥 YOU BURNED' :
+      explosionDeath ? '💥 YOU EXPLODED' :
+                       'YOU FELL';
+    if (deathMsgSub) deathMsgSub.textContent = 'respawning…';
     deathEl.style.display = 'flex';
   }
 }
@@ -2339,11 +2368,12 @@ function randomSafeTile() {
 }
 
 function respawn() {
-  isDead = false;
-  hasFallenOff = false;
-  homeRunDeath = false;
-  burnDeath    = false;
-  if (deathEl) deathEl.classList.remove('burn');
+  isDead         = false;
+  hasFallenOff   = false;
+  homeRunDeath   = false;
+  burnDeath      = false;
+  explosionDeath = false;
+  if (deathEl) { deathEl.classList.remove('burn'); deathEl.classList.remove('explode'); }
   window.SFX?.respawn();
   if (gameState === 'playing' && localLives <= 0) {
     enterGhostMode();
@@ -2437,7 +2467,7 @@ function returnToLobby() {
   eventCount = 0;
   for (const fb of fallingBananas) scene.remove(fb.group);
   fallingBananas.length = 0;
-  despawnCloud(); despawnGoblin(); despawnLava();
+  despawnCloud(); despawnGoblin(); despawnLava(); despawnHotPotato();
   clearWindStreaks();
   lavaSavedTileTimeLeft = 0;
   hideEventAnnouncement();
@@ -2473,11 +2503,14 @@ function startGame(seed, broadcast) {
   bananaImmunityTimer = 0;
   spawnImmunityTimer  = 0;
   burnDeath           = false;
+  explosionDeath      = false;
   hasBanana = false; bananaDurability = 0; playerBanana.visible = false;
   for (const p of bananaPeels) scene.remove(p.group);
   bananaPeels.length = 0;
   ghostPunchCooldown = 0;
   lastHitBy  = null;
+  despawnHotPotato();
+  explosionEffects.length = 0;
   // Reset random events — deterministic so every client fires at the same time
   _gameSeed = seed;
   _rainPeelBase = 0x40000000;
@@ -2491,7 +2524,7 @@ function startGame(seed, broadcast) {
   for (const fb of fallingBananas) scene.remove(fb.group);
   fallingBananas.length = 0;
   eventCount = 0;
-  despawnCloud(); despawnGoblin(); despawnLava();
+  despawnCloud(); despawnGoblin(); despawnLava(); despawnHotPotato();
   clearWindStreaks();
   lavaSavedTileTimeLeft = 0;
   hideEventAnnouncement();
@@ -2576,6 +2609,12 @@ function doPunch() {
       force = homeRun ? BAT_HOME_RUN_KNOCKBACK : BAT_NORMAL_KNOCKBACK;
     }
     sendPunch({ kx: dx / dist, kz: dz / dist, force, homeRun }, id);
+    // Hot Potato: pass the bomb to whoever we just hit
+    if (eventType === 'hot_potato' && hotPotatoHolder === 'local') {
+      hotPotatoHolder = id;
+      sendBombPass?.({ to: id }); // broadcast new holder to all peers
+      window.SFX?.bombPass();
+    }
     // Play attacker-side HIT sound
     if (homeRun)           window.SFX?.batHomeRun();
     else if (hasBat)       window.SFX?.batNormal();
@@ -2625,6 +2664,10 @@ const EVENT_INFO = {
   lava_floor: {
     name: '🌋 The Floor is Lava!',
     sub:  'Lava is rising — stay off the ground or burn!',
+  },
+  hot_potato: {
+    name: '🥔 Hot Potato!',
+    sub:  'Someone is holding a bomb — hit a player to pass it before it explodes!',
   },
 };
 
@@ -2737,6 +2780,127 @@ function updateLavaEvent(dt) {
   }
 }
 
+// ── HOT POTATO ─────────────────────────────────────────────────────────────
+
+function makeHotPotatoBomb() {
+  const g = new THREE.Group();
+  // Body — matte black sphere
+  const bodyMat = new THREE.MeshStandardMaterial({
+    color: 0x1a1a1a, metalness: 0.6, roughness: 0.45,
+    emissive: new THREE.Color(0xff2200), emissiveIntensity: 0,
+  });
+  const sphere = new THREE.Mesh(new THREE.SphereGeometry(0.22, 14, 10), bodyMat);
+  g.add(sphere);
+  // Fuse — short brown cylinder, angled off the top
+  const fuseMat = new THREE.MeshStandardMaterial({ color: 0x6b3a1e, roughness: 0.9 });
+  const fuse = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.28, 6), fuseMat);
+  fuse.position.set(0.07, 0.27, 0);
+  fuse.rotation.z = 0.35;
+  g.add(fuse);
+  // Spark at tip of fuse — small bright sphere
+  const sparkMat = new THREE.MeshStandardMaterial({
+    color: 0xffee00, emissive: new THREE.Color(0xffcc00), emissiveIntensity: 2.0,
+  });
+  const spark = new THREE.Mesh(new THREE.SphereGeometry(0.05, 7, 7), sparkMat);
+  spark.position.set(0.14, 0.41, 0);
+  g.add(spark);
+  // Dynamic point light for the glow
+  const light = new THREE.PointLight(0xff3300, 0, 3.5);
+  g.add(light);
+  return { group: g, sphere, spark, light, bodyMat };
+}
+
+function spawnExplosionEffect(x, y, z) {
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xff6600, emissive: new THREE.Color(0xff4400),
+    emissiveIntensity: 4, transparent: true, opacity: 1.0,
+  });
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.35, 10, 8), mat);
+  mesh.position.set(x, y, z);
+  scene.add(mesh);
+  const light = new THREE.PointLight(0xff4400, 10, 8);
+  light.position.set(x, y, z);
+  scene.add(light);
+  let elapsed = 0;
+  explosionEffects.push((dt) => {
+    elapsed += dt;
+    mesh.scale.setScalar(1 + elapsed * 8);
+    mat.opacity       = Math.max(0, 1 - elapsed * 2.2);
+    light.intensity   = Math.max(0, 10 - elapsed * 25);
+    if (elapsed >= 0.5) { scene.remove(mesh); scene.remove(light); return true; }
+    return false;
+  });
+}
+
+function updateHotPotatoEvent(dt) {
+  if (!hotPotatoBomb) return;
+  hotPotatoTimer -= dt;
+
+  // Resolve current holder's scene group
+  let holderGroup = null;
+  if (hotPotatoHolder === 'local') {
+    holderGroup = playerGroup;
+  } else if (hotPotatoHolder) {
+    const peer = peers.get(hotPotatoHolder);
+    if (!peer) { endEvent(); return; } // holder disconnected — abort
+    holderGroup = peer.group;
+  }
+
+  // Float the bomb just above the holder's head
+  if (holderGroup) {
+    hotPotatoBomb.group.position.set(
+      holderGroup.position.x,
+      holderGroup.position.y + 2.05,
+      holderGroup.position.z,
+    );
+  }
+
+  // Urgency 0→1 as timer counts down
+  const urgency = Math.max(0, 1.0 - hotPotatoTimer / hotPotatoMaxTime);
+  const flashRate = 1.5 + urgency * 9.0; // 1.5 → 10.5 Hz
+  const flashOn = Math.sin(time * Math.PI * 2 * flashRate) > 0.2;
+  hotPotatoBomb.bodyMat.emissiveIntensity = flashOn ? (0.3 + urgency * 2.2) : 0;
+  hotPotatoBomb.light.intensity           = flashOn ? (1.0 + urgency * 5.0) : 0;
+
+  // Slowly rotate bomb
+  hotPotatoBomb.group.rotation.y += dt * 1.8;
+
+  // Animate spark — flicker position and brightness
+  hotPotatoBomb.spark.position.set(
+    0.14 + Math.sin(time * 18) * 0.02,
+    0.41 + Math.abs(Math.sin(time * 22)) * 0.02,
+    Math.cos(time * 18) * 0.02,
+  );
+  hotPotatoBomb.spark.material.emissiveIntensity = 1.5 + Math.sin(time * 25) * 0.8;
+
+  // Ticking sound — accelerates with urgency
+  hotPotatoTickTimer -= dt;
+  if (hotPotatoTickTimer <= 0) {
+    window.SFX?.bombTick();
+    hotPotatoTickTimer = Math.max(0.06, 0.55 * (1.0 - urgency * 0.9));
+  }
+
+  // Explode when timer runs out
+  if (hotPotatoTimer <= 0) {
+    window.SFX?.bombExplode();
+    const bx = hotPotatoBomb.group.position.x;
+    const by = hotPotatoBomb.group.position.y;
+    const bz = hotPotatoBomb.group.position.z;
+    spawnExplosionEffect(bx, by, bz);
+    if (hotPotatoHolder === 'local') {
+      die({ explode: true });
+    }
+    endEvent();
+  }
+}
+
+function despawnHotPotato() {
+  if (!hotPotatoBomb) return;
+  scene.remove(hotPotatoBomb.group);
+  hotPotatoBomb = null;
+  hotPotatoHolder = null;
+}
+
 // Called independently on every client at the same deterministic game-time.
 function triggerEvent(type) {
   eventState = 'announcing';
@@ -2787,6 +2951,22 @@ function beginEvent() {
     lavaSavedTileTimeLeft = Math.max(3, nextTileTime - gameTime);
     nextTileTime          = Infinity;
     spawnLava();
+  } else if (eventType === 'hot_potato') {
+    // Fuse duration: deterministic 15–30 s
+    let _hs = (_gameSeed ^ (0xb0b0b0b0 + eventCount * 0xd83c)) >>> 0;
+    _hs = (Math.imul(_hs, 1664525) + 1013904223) | 0;
+    hotPotatoMaxTime = 15 + ((_hs >>> 0) / 0x100000000) * 15;
+    hotPotatoTimer   = hotPotatoMaxTime;
+    eventTimer       = hotPotatoMaxTime + 5; // safety cap
+    hotPotatoTickTimer = 0;
+    // Pick initial holder deterministically from sorted player list
+    const allIds = [localPeerId, ...[...peers.keys()]].filter(Boolean).sort();
+    let _hi = (_gameSeed ^ (0xa1a1a1a1 + eventCount)) >>> 0;
+    _hi = (Math.imul(_hi, 1664525) + 1013904223) | 0;
+    const pickedId = allIds.length > 0 ? allIds[(_hi >>> 0) % allIds.length] : localPeerId;
+    hotPotatoHolder = (pickedId === localPeerId) ? 'local' : pickedId;
+    hotPotatoBomb = makeHotPotatoBomb();
+    scene.add(hotPotatoBomb.group);
   }
 }
 
@@ -2799,6 +2979,7 @@ function endEvent() {
   despawnCloud();
   clearWindStreaks();
   despawnLava();
+  despawnHotPotato();
   // Restore tile dropping if lava froze it
   if (lavaSavedTileTimeLeft > 0) {
     nextTileTime          = gameTime + lavaSavedTileTimeLeft;
@@ -3623,8 +3804,14 @@ function loop(now) {
         updateGoblinEvent(dt);
       } else if (eventType === 'lava_floor') {
         updateLavaEvent(dt);
+      } else if (eventType === 'hot_potato') {
+        updateHotPotatoEvent(dt);
       }
       if (eventTimer <= 0 && eventState === 'running') endEvent();
+    }
+    // --- Explosion effects (hot potato) ---
+    for (let i = explosionEffects.length - 1; i >= 0; i--) {
+      if (explosionEffects[i](dt)) explosionEffects.splice(i, 1);
     }
     // --- Falling banana physics & landing ---
     for (let i = fallingBananas.length - 1; i >= 0; i--) {
