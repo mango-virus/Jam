@@ -1342,8 +1342,9 @@ let isLocked = false;
 
 renderer.domElement.addEventListener('click', () => {
   if (gameState === 'playing') renderer.domElement.requestPointerLock();
-  // Start music on first interaction (browser autoplay policy)
-  window.GameMusic?.start();
+  // Start the right music track on first interaction (browser autoplay policy)
+  if (gameState === 'playing') window.GameMusic?.start();
+  else window.MenuMusic?.start();
 });
 
 // Mute button + volume slider
@@ -1739,6 +1740,8 @@ function winGame(winnerName, isLocal) {
 }
 
 function returnToLobby() {
+  window.GameMusic?.stop();
+  window.MenuMusic?.start();
   gameState  = 'lobby';
   localLives = 3 + (hasArmor ? 1 : 0);
   isGhost    = false;
@@ -1788,6 +1791,7 @@ function startGame(seed, broadcast) {
   // Pick a random track based on the match seed so all players hear the same one
   const trackCount = window.GameMusic?.trackCount ?? 1;
   const trackIdx   = Math.floor(((seed >>> 0) * 1664525 + 1013904223) >>> 0) % trackCount;
+  window.MenuMusic?.stop();
   window.GameMusic?.stop();
   window.GameMusic?.playTrack(trackIdx);
   window.GameMusic?.start();
@@ -2319,7 +2323,7 @@ function updateMenuReadyList() {
 
 if (btnReady) {
   btnReady.addEventListener('click', () => {
-    window.GameMusic?.start();
+    window.MenuMusic?.start(); // ensure menu music starts on first interaction
     localReady = !localReady;
     btnReady.textContent = localReady ? 'Cancel Ready' : 'Ready Up';
     btnReady.classList.toggle('is-ready', localReady);

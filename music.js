@@ -379,3 +379,53 @@
     get muted() { return muted; },
   };
 })();
+
+// ---------------------------------------------------------------------------
+// Menu music — plays menu-music.mp3 on loop during lobby / game-over screen
+// at the original louder volume (0.38).
+// ---------------------------------------------------------------------------
+(function () {
+  const VOLUME = 0.38;
+  let ctx = null, gainNode = null, source = null, buffer = null;
+
+  function ensureCtx() {
+    if (!ctx) {
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      gainNode = ctx.createGain();
+      gainNode.gain.value = VOLUME;
+      gainNode.connect(ctx.destination);
+    }
+    if (ctx.state === 'suspended') ctx.resume();
+  }
+
+  async function loadBuffer() {
+    if (buffer) return;          // already loaded
+    try {
+      const res = await fetch('menu-music.mp3');
+      const arr = await res.arrayBuffer();
+      buffer = await ctx.decodeAudioData(arr);
+    } catch (e) {
+      console.warn('[MenuMusic] could not load menu-music.mp3', e);
+    }
+  }
+
+  async function start() {
+    if (source) return;          // already playing
+    ensureCtx();
+    await loadBuffer();
+    if (!buffer) return;
+    source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.loop   = true;
+    source.connect(gainNode);
+    source.start(0);
+  }
+
+  function stop() {
+    if (!source) return;
+    try { source.stop(); } catch (_) {}
+    source = null;
+  }
+
+  window.MenuMusic = { start, stop };
+})();
