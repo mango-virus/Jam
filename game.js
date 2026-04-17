@@ -2829,7 +2829,8 @@ let ghostPunchCooldown = 0;
 let lastHitBy          = null;      // peer id who last punched us
 let lastHitByWasGhost  = false;
 let hasArmor           = localStorage.getItem('arenaHasArmor') === '1';
-let localReady         = false;
+let localReady             = false;
+let matchParticipantCount  = 0;   // number of players (non-spectating) who entered this match
 let tileOrder          = [];        // shuffled tile indices
 let tileDropIndex      = 0;         // next tile to warn
 let nextTileTime       = 0;         // game-time when next tile event fires
@@ -3239,13 +3240,17 @@ function respawn() {
 
 function checkWinCondition() {
   if (gameState !== 'playing') return;
-  // Count alive (non-ghost, non-spectating) players including self
+  // Solo match — never trigger game over; one player alone has nothing to win
+  if (matchParticipantCount < 2) return;
+  // Count alive (non-ghost) players who are actually in the match
   let aliveCount = (isGhost || isSpectating) ? 0 : 1;
   let aliveNames = (isGhost || isSpectating) ? [] : [incoming.username];
   for (const peer of peers.values()) {
-    if (!peer.isGhost) { aliveCount++; aliveNames.push(peer.username || '?'); }
+    if (!peer.isGhost && peer.inMatch && !peer.spectating) {
+      aliveCount++;
+      aliveNames.push(peer.username || '?');
+    }
   }
-  if (peers.size === 0) return; // need at least 2 players to trigger win
   // Everyone became a ghost simultaneously (draw) → return to lobby with no winner
   if (aliveCount === 0) {
     returnToLobby();
@@ -3289,8 +3294,9 @@ function returnToLobby() {
   gameState  = 'lobby';
   localLives = 3 + (hasArmor ? 1 : 0);
   isGhost    = false;
-  localReady = false;
-  isDead     = false;
+  localReady            = false;
+  matchParticipantCount = 0;
+  isDead                = false;
   // Clean up spectator state if returning from spectating
   if (isSpectating) {
     isSpectating   = false;
@@ -3359,6 +3365,13 @@ function startGame(seed, broadcast) {
   gameState  = 'playing';
   isHost     = !!broadcast; // the player who starts the game owns item spawning
   localLives = isSpectating ? 0 : 3 + (hasArmor ? 1 : 0);
+  // Count how many real players (non-spectating) entered this match
+  if (!isSpectating) {
+    matchParticipantCount = 1; // self
+    for (const peer of peers.values()) {
+      if (peer.ready && !peer.spectating) matchParticipantCount++;
+    }
+  }
   isGhost             = false;
   isDead              = false;
   homeRunDeath        = false;
