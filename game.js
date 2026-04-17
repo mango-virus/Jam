@@ -1846,15 +1846,32 @@ renderer.domElement.addEventListener('click', () => {
   if (gameState === 'playing') renderer.domElement.requestPointerLock();
 });
 
-// Mute button + volume slider
-const btnMute      = document.getElementById('btn-mute');
-const volumeSlider = document.getElementById('volume-slider');
+// Mute button + volume slider (HUD copies + lobby menu copies stay in sync)
+const btnMute        = document.getElementById('btn-mute');
+const volumeSlider   = document.getElementById('volume-slider');
+const menuBtnMute    = document.getElementById('menu-btn-mute');
+const menuVolSlider  = document.getElementById('menu-volume-slider');
+
+// Sync all music UI to a given muted state / volume value
+function syncMusicUI(muted, val) {
+  const icon = muted ? '🔇' : '🔊';
+  const sliderOpacity = muted ? '0.35' : '1';
+  if (btnMute)       btnMute.textContent  = icon;
+  if (menuBtnMute)   menuBtnMute.textContent = icon;
+  if (volumeSlider)  { volumeSlider.value  = val; volumeSlider.style.opacity  = sliderOpacity; }
+  if (menuVolSlider) { menuVolSlider.value = val; menuVolSlider.style.opacity = sliderOpacity; }
+}
 
 if (btnMute) {
   btnMute.addEventListener('click', () => {
     const nowMuted = window.MenuMusic?.toggle();
-    btnMute.textContent = nowMuted ? '🔇' : '🔊';
-    if (volumeSlider) volumeSlider.style.opacity = nowMuted ? '0.35' : '1';
+    syncMusicUI(nowMuted, volumeSlider?.value ?? 38);
+  });
+}
+if (menuBtnMute) {
+  menuBtnMute.addEventListener('click', () => {
+    const nowMuted = window.MenuMusic?.toggle();
+    syncMusicUI(nowMuted, menuVolSlider?.value ?? 38);
   });
 }
 
@@ -1864,7 +1881,14 @@ if (volumeSlider) {
   volumeSlider.addEventListener('input', () => {
     const v = volumeSlider.value / 100;
     window.MenuMusic?.setVolume(v);
-    if (btnMute) btnMute.textContent = v === 0 ? '🔇' : '🔊';
+    syncMusicUI(v === 0, volumeSlider.value);
+  });
+}
+if (menuVolSlider) {
+  menuVolSlider.addEventListener('input', () => {
+    const v = menuVolSlider.value / 100;
+    window.MenuMusic?.setVolume(v);
+    syncMusicUI(v === 0, menuVolSlider.value);
   });
 }
 
