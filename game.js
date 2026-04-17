@@ -183,172 +183,347 @@ function rebuildArena(seed) {
     return new THREE.MeshStandardMaterial({ color, roughness, metalness });
   }
 
+  // Orient a mesh so its local Y axis points from p1 to p2, add to scene
+  function cylBetween(p1, p2, r, mat) {
+    const mid = p1.clone().add(p2).multiplyScalar(0.5);
+    const dir = p2.clone().sub(p1);
+    const len = dir.length();
+    if (len < 0.001) return;
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 8), mat);
+    m.position.copy(mid);
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir.normalize());
+    m.castShadow = true; m.receiveShadow = true;
+    scene.add(m); pillarMeshes.push(m);
+  }
+
   // ── Chair ──────────────────────────────────────────────────────────
   function spawnChair(x, z) {
     const ang = Math.floor(rand() * 4) * (Math.PI / 2);
     const ca = Math.cos(ang), sa = Math.sin(ang);
     function rp(ox, oz) { return [x + ox*ca - oz*sa, z + ox*sa + oz*ca]; }
-    const WOOD = mkM(0x8B5432, 0.82), DARK = mkM(0x6B3C1C, 0.88);
-    const LEG_H = 4.0, LEG_R = 0.22, SW = 5.5, SD = 5.5, ST = 0.45;
-    const SEAT_TOP = LEG_H + ST, BH = 5.0, BT = 0.45, BACK_TOP = SEAT_TOP + BH;
-    // 4 turned legs
+
+    const WOOD    = mkM(0x8B5432, 0.82);
+    const DARK    = mkM(0x5C3317, 0.88);
+    const CUSHION = mkM(0x7B3030, 0.94);
+
+    const LEG_H = 4.2, LEG_R = 0.22, SW = 5.5, SD = 5.5, ST = 0.4;
+    const SEAT_TOP = LEG_H + ST, BH = 5.5, BT = 0.42, BACK_TOP = SEAT_TOP + BH;
+
+    // 4 turned legs — two tapered segments with a decorative bead at the join
     for (const [ox, oz] of [[2.0,2.0],[-2.0,2.0],[2.0,-2.0],[-2.0,-2.0]]) {
       const [lx,lz] = rp(ox, oz);
-      addMesh(new THREE.CylinderGeometry(LEG_R, LEG_R*1.15, LEG_H, 8), WOOD, lx, LEG_H/2, lz);
+      addMesh(new THREE.CylinderGeometry(LEG_R*0.85, LEG_R*1.2, LEG_H*0.55, 8), WOOD, lx, LEG_H*0.275, lz);
+      addMesh(new THREE.CylinderGeometry(LEG_R*0.72, LEG_R*0.85, LEG_H*0.45, 8), WOOD, lx, LEG_H*0.55+LEG_H*0.225, lz);
+      addMesh(new THREE.CylinderGeometry(LEG_R*1.1,  LEG_R*1.1,  0.18, 10),      DARK, lx, LEG_H*0.55, lz);
       addPillarCol(lx, lz, LEG_R+0.18, LEG_H);
     }
-    // Cross-braces
-    addMesh(new THREE.BoxGeometry(SW-0.4, 0.2, 0.22), DARK, x, LEG_H*0.42, z, ang);
-    addMesh(new THREE.BoxGeometry(0.22, 0.2, SD-0.4), DARK, x, LEG_H*0.42, z, ang);
-    // Seat board
+
+    // 4 stretchers — each one runs between an adjacent pair of legs
+    const SY = LEG_H * 0.38;
+    const [fsx,fsz] = rp(0,  2.0);  // front midpoint
+    const [bkx,bkz] = rp(0, -2.0);  // back midpoint
+    const [lsx,lsz] = rp(-2.0, 0);  // left midpoint
+    const [rsx,rsz] = rp( 2.0, 0);  // right midpoint
+    addMesh(new THREE.BoxGeometry(4.1, 0.2, 0.22), DARK, fsx, SY, fsz, ang);
+    addMesh(new THREE.BoxGeometry(4.1, 0.2, 0.22), DARK, bkx, SY, bkz, ang);
+    addMesh(new THREE.BoxGeometry(0.22, 0.2, 4.1), DARK, lsx, SY, lsz, ang);
+    addMesh(new THREE.BoxGeometry(0.22, 0.2, 4.1), DARK, rsx, SY, rsz, ang);
+
+    // Seat board + cushion
     addMesh(new THREE.BoxGeometry(SW, ST, SD), WOOD, x, SEAT_TOP-ST/2, z, ang);
-    addEP(x, z, SW/2, SD/2, SEAT_TOP, ang);
-    // Back rest
+    addMesh(new THREE.BoxGeometry(SW-0.7, 0.38, SD-0.7), CUSHION, x, SEAT_TOP+0.19, z, ang);
+    addEP(x, z, SW/2, SD/2, SEAT_TOP+0.38, ang);
+
+    // Two back uprights + ball finials
+    for (const ox of [-1.9, 1.9]) {
+      const [px,pz] = rp(ox, SD/2-BT/2);
+      addMesh(new THREE.CylinderGeometry(LEG_R*0.8, LEG_R*0.9, BH, 8), DARK, px, SEAT_TOP+BH/2, pz);
+      addMesh(new THREE.SphereGeometry(LEG_R*1.15, 8, 6), DARK, px, SEAT_TOP+BH+LEG_R*1.15, pz);
+    }
+    // Top rail
     const [bx,bz] = rp(0, SD/2-BT/2);
-    addMesh(new THREE.BoxGeometry(SW, BH, BT), WOOD, bx, SEAT_TOP+BH/2, bz, ang);
-    addEP(bx, bz, SW/2, BT/2+0.15, BACK_TOP, ang);
-    // Decorative horizontal slats
+    addMesh(new THREE.BoxGeometry(SW-0.4, 0.42, BT), DARK, bx, SEAT_TOP+BH-0.22, bz, ang);
+    addEP(bx, bz, SW/2, BT/2+0.12, BACK_TOP, ang);
+    // 3 horizontal back slats
     for (let s = 0; s < 3; s++)
-      addMesh(new THREE.BoxGeometry(SW-0.4, 0.28, 0.28), DARK, bx, SEAT_TOP+BH*(0.2+s*0.3), bz, ang);
+      addMesh(new THREE.BoxGeometry(SW-0.42, 0.3, 0.28), DARK, bx, SEAT_TOP+BH*(0.18+s*0.27), bz, ang);
+
     occupied.push({ x, z, r: SW/2+0.8 });
   }
 
   // ── Toy Blocks ─────────────────────────────────────────────────────
   function spawnToyBlocks(x, z) {
-    const BCOLORS = [0xE53935,0x1E88E5,0xF9A825,0x43A047,0xAB47BC,0xFF7043];
+    const BCOLORS = [0xE53935,0x1E88E5,0xF9A825,0x43A047,0xAB47BC,0xFF7043,0xE91E63,0x00BCD4];
     const BS = 3.4, n = 1 + Math.floor(rand()*3);
     let curY = 0;
     for (let i = 0; i < n; i++) {
-      const col = BCOLORS[Math.floor(rand()*BCOLORS.length)];
+      const colA = BCOLORS[Math.floor(rand()*BCOLORS.length)];
+      const colB = BCOLORS[Math.floor(rand()*BCOLORS.length)];
       const ox = i===0 ? 0 : (rand()-0.5)*0.5, oz = i===0 ? 0 : (rand()-0.5)*0.5;
       const ry = (rand()-0.5)*0.3;
       const wx = x+ox, wz = z+oz, cy = curY+BS/2;
-      addMesh(new THREE.BoxGeometry(BS, BS, BS), mkM(col, 0.5), wx, cy, wz, ry);
-      // White letter tile on front face
-      addMesh(new THREE.BoxGeometry(BS*0.55, BS*0.55, 0.09), mkM(0xFFFFFF, 0.35), wx, cy, wz+BS/2+0.04, ry);
-      // Dot on top
-      addMesh(new THREE.CylinderGeometry(0.35, 0.35, 0.1, 10), mkM(0xFFFFFF, 0.35), wx, curY+BS+0.05, wz);
-      addEP(wx, wz, BS/2-0.08, BS/2-0.08, curY+BS, ry);
+      // Block body
+      addMesh(new THREE.BoxGeometry(BS, BS, BS), mkM(colA, 0.5), wx, cy, wz, ry);
+      // White letter panels on front & back faces with coloured border frame behind each
+      const PW = BS*0.56, PH = BS*0.56, PT = 0.09, off = BS/2+0.05;
+      addMesh(new THREE.BoxGeometry(PW+0.28, PH+0.28, PT*0.7), mkM(colB,0.4), wx, cy, wz+off-0.02, ry);
+      addMesh(new THREE.BoxGeometry(PW, PH, PT),                mkM(0xFFFFFF,0.3), wx, cy, wz+off,    ry);
+      addMesh(new THREE.BoxGeometry(PW+0.28, PH+0.28, PT*0.7), mkM(colB,0.4), wx, cy, wz-off+0.02, ry);
+      addMesh(new THREE.BoxGeometry(PW, PH, PT),                mkM(0xFFFFFF,0.3), wx, cy, wz-off,    ry);
+      // 4 LEGO-style stud pegs on top
+      for (const [dx,dz2] of [[BS*0.22,BS*0.22],[BS*0.22,-BS*0.22],[-BS*0.22,BS*0.22],[-BS*0.22,-BS*0.22]])
+        addMesh(new THREE.CylinderGeometry(0.3, 0.3, 0.22, 10), mkM(colA,0.45), wx+dx, curY+BS+0.11, wz+dz2);
+      addEP(wx, wz, BS/2-0.06, BS/2-0.06, curY+BS+0.22, ry);
       curY += BS;
     }
-    addPillarCol(x, z, BS/2+0.05, curY);
+    addPillarCol(x, z, BS/2+0.1, curY+0.22);
     occupied.push({ x, z, r: BS/2+0.65 });
   }
 
   // ── Cardboard Box ──────────────────────────────────────────────────
   function spawnBox(x, z) {
     const ang = Math.floor(rand()*4)*(Math.PI/2);
+    const ca = Math.cos(ang), sa = Math.sin(ang);
     const W = 5.0+rand()*2.5, H = 3.5+rand()*2.5, D = 5.0+rand()*2.5;
-    const bMat = mkM(0xC88C40, 0.95), dMat = mkM(0x9A6820, 0.97), tMat = mkM(0xE8B84B, 0.65);
+    const T = 0.2; // wall thickness
+    const bMat = mkM(0xC88C40, 0.95), dMat = mkM(0x9A6820, 0.97);
+    const tMat = mkM(0xE8B84B, 0.65), lMat = mkM(0xF5E6C8, 0.80);
+
+    // Solid body
     addMesh(new THREE.BoxGeometry(W, H, D), bMat, x, H/2, z, ang);
-    // Crease lines
-    addMesh(new THREE.BoxGeometry(W+0.06, 0.13, 0.13), dMat, x, H*0.5, z, ang);
-    addMesh(new THREE.BoxGeometry(0.13, 0.13, D+0.06), dMat, x, H*0.5, z, ang);
-    addMesh(new THREE.BoxGeometry(W+0.06, 0.13, 0.13), dMat, x, H*0.22, z, ang);
-    addMesh(new THREE.BoxGeometry(0.13, 0.13, D+0.06), dMat, x, H*0.22, z, ang);
+
+    // Horizontal fold crease lines (front & back faces)
+    for (const fy of [H*0.5, H*0.25]) {
+      addMesh(new THREE.BoxGeometry(W+0.05, 0.11, 0.11), dMat, x, fy, z, ang);
+      addMesh(new THREE.BoxGeometry(0.11, 0.11, D+0.05), dMat, x, fy, z, ang);
+    }
+    // Vertical corner crease lines
+    for (const sign of [-1, 1]) {
+      addMesh(new THREE.BoxGeometry(0.11, H+0.05, 0.11), dMat, x+sign*(W/2)*ca, H/2, z+sign*(W/2)*sa, ang);
+      addMesh(new THREE.BoxGeometry(0.11, H+0.05, 0.11), dMat, x-sign*(D/2)*sa, H/2, z+sign*(D/2)*ca, ang);
+    }
+    // Shipping label on one face
+    addMesh(new THREE.BoxGeometry(W*0.55, H*0.40, 0.07), lMat, x-(D/2-0.04)*sa, H*0.58, z+(D/2-0.04)*ca, ang);
     // Tape cross on top
     addMesh(new THREE.BoxGeometry(W*0.88, 0.08, 0.26), tMat, x, H+0.04, z, ang);
     addMesh(new THREE.BoxGeometry(0.26, 0.08, D*0.88), tMat, x, H+0.04, z, ang);
+    // Open flap rims sticking up at box top edge
+    addMesh(new THREE.BoxGeometry(W+0.05, T, 0.12), dMat, x, H+T/2, z, ang);
+    addMesh(new THREE.BoxGeometry(0.12, T, D+0.05), dMat, x, H+T/2, z, ang);
+
     addEP(x, z, W/2, D/2, H, ang);
     occupied.push({ x, z, r: Math.max(W,D)/2+0.5 });
   }
 
   // ── Desk Lamp ──────────────────────────────────────────────────────
   function spawnLamp(x, z) {
-    const mMat = mkM(0x9E9E9E, 0.3, 0.65);
-    const sMat = new THREE.MeshStandardMaterial({ color: 0x2E7D32, roughness: 0.55, side: THREE.DoubleSide });
-    const bMat = new THREE.MeshStandardMaterial({ color: 0xFFFDE7, roughness: 0.15, emissive: new THREE.Color(0xFFEB3B), emissiveIntensity: 1.8 });
-    // Weighted base
-    addMesh(new THREE.CylinderGeometry(2.2, 2.6, 0.55, 18), mMat, x, 0.275, z);
-    addEP(x, z, 2.0, 2.0, 0.55);
-    // Pole
-    addMesh(new THREE.CylinderGeometry(0.22, 0.22, 8.5, 8), mMat, x, 4.8, z);
-    addPillarCol(x, z, 0.42, 9.05);
-    // Knuckle joint
-    addMesh(new THREE.SphereGeometry(0.42, 10, 8), mMat, x, 9.3, z);
-    // Open shade cone (DoubleSide shows inside)
-    addMesh(new THREE.ConeGeometry(2.5, 2.9, 20, 1, true), sMat, x, 10.6, z);
+    const mMat = mkM(0xB0BEC5, 0.28, 0.70);
+    const gMat = mkM(0x78909C, 0.35, 0.60);
+    const sMat = new THREE.MeshStandardMaterial({ color:0x1B5E20, roughness:0.5, side:THREE.DoubleSide });
+    const bMat = new THREE.MeshStandardMaterial({ color:0xFFFDE7, roughness:0.12, emissive:new THREE.Color(0xFFEB3B), emissiveIntensity:2.0 });
+    const armDir = rand() * Math.PI * 2;
+    const armCa = Math.cos(armDir), armSa = Math.sin(armDir);
+
+    // Base — two stacked discs
+    addMesh(new THREE.CylinderGeometry(2.5, 2.8, 0.5,  20), mMat, x, 0.25, z);
+    addMesh(new THREE.CylinderGeometry(2.0, 2.5, 0.22, 20), gMat, x, 0.61, z);
+    addEP(x, z, 2.3, 2.3, 0.72);
+    // Base collar
+    addMesh(new THREE.CylinderGeometry(0.38, 0.45, 0.9, 10), mMat, x, 1.17, z);
+    // Vertical pole (tapered slightly)
+    addMesh(new THREE.CylinderGeometry(0.22, 0.36, 7.8, 8), mMat, x, 5.5, z);
+    addPillarCol(x, z, 0.45, 9.4);
+    // Top pivot sphere
+    addMesh(new THREE.SphereGeometry(0.40, 10, 8), gMat, x, 9.4, z);
+
+    // Arm segment 1 — horizontal from pole top toward armDir
+    const elbX = x + armCa*2.8, elbZ = z + armSa*2.8;
+    cylBetween(new THREE.Vector3(x, 9.4, z), new THREE.Vector3(elbX, 9.4, elbZ), 0.18, mMat);
+    // Mid-elbow pivot
+    addMesh(new THREE.SphereGeometry(0.30, 8, 6), gMat, elbX, 9.7, elbZ);
+    // Arm segment 2 — angled upward to lamp head
+    const headX = x + armCa*5.2, headY = 11.6, headZ = z + armSa*5.2;
+    cylBetween(new THREE.Vector3(elbX, 9.7, elbZ), new THREE.Vector3(headX, headY, headZ), 0.16, mMat);
+    // Head pivot
+    addMesh(new THREE.SphereGeometry(0.28, 8, 6), gMat, headX, headY, headZ);
+    // Shade — open downward cone, DoubleSide shows reflective interior
+    addMesh(new THREE.ConeGeometry(2.7, 3.2, 20, 1, true), sMat, headX, headY+0.9, headZ);
+    // Shade bottom rim ring
+    addMesh(new THREE.TorusGeometry(2.7, 0.10, 8, 24), gMat, headX, headY-0.7, headZ);
+    // Shade top hole rim
+    addMesh(new THREE.TorusGeometry(0.40, 0.08, 6, 16), gMat, headX, headY+2.5, headZ);
     // Bulb
-    addMesh(new THREE.SphereGeometry(0.58, 10, 8), bMat, x, 9.7, z);
-    addGlow(x, 9.7, z, 0.13, 2.8, 18);
-    occupied.push({ x, z, r: 2.6 });
+    addMesh(new THREE.SphereGeometry(0.62, 10, 8), bMat, headX, headY+0.15, headZ);
+
+    addGlow(headX, headY+0.15, headZ, 0.13, 3.2, 24);
+    occupied.push({ x, z, r: 5.8 });
   }
 
   // ── Battery ────────────────────────────────────────────────────────
   function spawnBattery(x, z) {
-    const BR = 1.8, BH = 9.0;
-    addMesh(new THREE.CylinderGeometry(BR, BR, BH, 20),           mkM(0x388E3C,0.4,0.3),  x, BH/2, z);
-    addMesh(new THREE.CylinderGeometry(BR+0.05,BR+0.05,BH*0.42,20), mkM(0x66BB6A,0.55),  x, BH*0.40, z);
-    addMesh(new THREE.CylinderGeometry(BR+0.06,BR+0.06,0.24,20),  mkM(0xFFD54F,0.5),     x, BH*0.64, z);
-    addMesh(new THREE.CylinderGeometry(BR+0.06,BR+0.06,0.30,20),  mkM(0xBDBDBD,0.25,0.75), x, 0.15, z);
-    addMesh(new THREE.CylinderGeometry(BR+0.06,BR+0.06,0.40,20),  mkM(0xBDBDBD,0.25,0.75), x, BH+0.20, z);
-    addMesh(new THREE.CylinderGeometry(0.52,0.52,0.50,12),        mkM(0xBDBDBD,0.25,0.75), x, BH+0.65, z);
-    addPillarCol(x, z, BR+0.15, BH+0.85);
-    addGlow(x, BH+1.0, z, 0.35, 0.6, 8);
-    occupied.push({ x, z, r: BR+0.8 });
+    const BR = 1.8, BH = 9.5;
+    const green = rand() > 0.45;
+    const bodyC  = green ? 0x2E7D32 : 0x1565C0;
+    const labelC = green ? 0x66BB6A : 0x42A5F5;
+    const stripeC= green ? 0xFFD54F : 0xFFF176;
+    const capM   = mkM(0xBDBDBD, 0.22, 0.80);
+
+    // Main cylinder body
+    addMesh(new THREE.CylinderGeometry(BR,    BR,    BH,    24), mkM(bodyC, 0.4, 0.3), x, BH/2, z);
+    // Label wrapper band
+    addMesh(new THREE.CylinderGeometry(BR+0.05, BR+0.05, BH*0.48, 24), mkM(labelC, 0.55), x, BH*0.42, z);
+    // Brand stripe (wide)
+    addMesh(new THREE.CylinderGeometry(BR+0.07, BR+0.07, 0.35, 24), mkM(stripeC, 0.45), x, BH*0.70, z);
+    // Thin accent stripe
+    addMesh(new THREE.CylinderGeometry(BR+0.07, BR+0.07, 0.14, 24), mkM(stripeC, 0.45), x, BH*0.63, z);
+    // Insulator ring (black) between label and body bottom
+    addMesh(new THREE.CylinderGeometry(BR+0.06, BR+0.06, 0.18, 24), mkM(0x212121, 0.7), x, BH*0.18, z);
+
+    // Bottom (−) cap: raised ring + flat disc terminal
+    addMesh(new THREE.CylinderGeometry(BR+0.08, BR+0.10, 0.30, 24), capM, x, 0.15, z);
+    addMesh(new THREE.CylinderGeometry(BR*0.50, BR*0.50, 0.09, 12), mkM(0x757575, 0.3, 0.6), x, 0.04, z);
+
+    // Top (+) cap: raised collar, nub, rounded tip
+    addMesh(new THREE.CylinderGeometry(BR+0.08, BR+0.08, 0.44, 24), capM, x, BH+0.22, z);
+    addMesh(new THREE.CylinderGeometry(0.56, 0.56, 0.58, 12), capM, x, BH+0.71, z);
+    addMesh(new THREE.SphereGeometry(0.24, 8, 6), mkM(0xE0E0E0, 0.15, 0.85), x, BH+1.00, z);
+
+    addPillarCol(x, z, BR+0.15, BH+1.0);
+    addGlow(x, BH+1.0, z, green ? 0.33 : 0.62, 0.7, 10);
+    occupied.push({ x, z, r: BR+0.85 });
   }
 
   // ── Computer Monitor ───────────────────────────────────────────────
   function spawnMonitor(x, z) {
-    const ang = Math.floor(rand()*4)*(Math.PI/2);
-    const sMat = new THREE.MeshStandardMaterial({ color:0x0D47A1, roughness:0.15, emissive:new THREE.Color(0x1565C0), emissiveIntensity:0.6 });
-    const SW=8.5, SH=5.5, SD=1.2, NH=3.2, BH2=0.5;
+    const ang  = Math.floor(rand()*4)*(Math.PI/2);
+    const ca   = Math.cos(ang), sa = Math.sin(ang);
+    const fMat = mkM(0x1A1A1A, 0.60, 0.35);
+    const stMat= mkM(0x383838, 0.70, 0.20);
+    const scrMat = new THREE.MeshStandardMaterial({ color:0x0D47A1, roughness:0.12, emissive:new THREE.Color(0x1565C0), emissiveIntensity:0.65 });
+    const ledMat = new THREE.MeshStandardMaterial({ color:0x00E676, roughness:0.1,  emissive:new THREE.Color(0x00E676), emissiveIntensity:2.5 });
+    const SW=9.0, SH=6.0, SD=1.5, NH=3.5, BH2=0.55;
     const SCR_Y = BH2+NH+SH/2;
-    addMesh(new THREE.BoxGeometry(4.5,BH2,3.0),          mkM(0x424242,0.7,0.2), x, BH2/2, z);
-    addEP(x, z, 2.25, 1.5, BH2);
-    addMesh(new THREE.BoxGeometry(0.7,NH,1.0),            mkM(0x424242,0.7,0.2), x, BH2+NH/2, z);
-    addPillarCol(x, z, 0.65, BH2+NH);
-    addMesh(new THREE.BoxGeometry(SW+0.6,SH+0.6,SD),     mkM(0x212121,0.6,0.3), x, SCR_Y, z, ang);
-    addMesh(new THREE.BoxGeometry(SW,SH,0.12),            sMat,                  x, SCR_Y, z, ang);
-    addEP(x, z, (SW+0.6)/2, SD/2+0.1, SCR_Y+SH/2+0.3, ang);
-    addGlow(x, SCR_Y, z, 0.65, 0.9, 12);
-    occupied.push({ x, z, r: (SW+0.6)/2+0.5 });
+
+    // Stand base — T-bar shape
+    addMesh(new THREE.BoxGeometry(5.5, BH2, 3.8), stMat, x, BH2/2, z);
+    addMesh(new THREE.BoxGeometry(1.8, BH2*0.6, 1.8), mkM(0x505050,0.65,0.25), x, BH2*0.7, z);
+    addEP(x, z, 2.75, 1.9, BH2);
+
+    // Neck — tapered with a tilt-adjustment bump in the middle
+    addMesh(new THREE.BoxGeometry(0.9, NH*0.55, 1.2), stMat, x, BH2+NH*0.275, z);
+    addMesh(new THREE.BoxGeometry(1.5, 0.55,   1.5), mkM(0x505050,0.65,0.25), x, BH2+NH*0.55, z); // tilt bracket
+    addMesh(new THREE.BoxGeometry(0.7, NH*0.45, 1.0), stMat, x, BH2+NH*0.55+NH*0.225, z);
+    addPillarCol(x, z, 0.80, BH2+NH);
+
+    // Outer bezel (frame)
+    addMesh(new THREE.BoxGeometry(SW+0.9, SH+1.0, SD),   fMat,   x, SCR_Y, z, ang);
+    // Screen (emissive display)
+    addMesh(new THREE.BoxGeometry(SW,     SH,     0.12),  scrMat, x, SCR_Y, z, ang);
+    // Bezel bottom chin (thicker area with buttons)
+    addMesh(new THREE.BoxGeometry(SW+0.9, 0.35,   SD+0.02), fMat, x, SCR_Y-SH/2-0.18, z, ang);
+
+    // Power LED on chin (front of bezel, slightly offset)
+    addMesh(new THREE.SphereGeometry(0.14, 6, 4), ledMat, x+(SW*0.38)*ca, SCR_Y-SH/2-0.18, z+(SW*0.38)*sa);
+    // 3 small menu buttons on the chin right side
+    for (let b = 0; b < 3; b++) {
+      const bOff = -SW*0.18 + b*0.55;
+      addMesh(new THREE.CylinderGeometry(0.12, 0.12, 0.12, 8), mkM(0x555555,0.5), x+bOff*ca, SCR_Y-SH/2-0.04, z+bOff*sa);
+    }
+    // Top of monitor — standable
+    addEP(x, z, (SW+0.9)/2, SD/2+0.12, SCR_Y+SH/2+0.50+0.12, ang);
+
+    addGlow(x, SCR_Y, z, 0.65, 1.0, 14);
+    occupied.push({ x, z, r: (SW+0.9)/2+0.5 });
   }
 
   // ── Coffee Mug ─────────────────────────────────────────────────────
   function spawnMug(x, z) {
-    const hue = [0.0,0.55,0.08,0.7,0.33][Math.floor(rand()*5)];
-    const mHex = new THREE.Color().setHSL(hue,0.7,0.45).getHex();
-    const sHex = new THREE.Color().setHSL(hue,0.9,0.30).getHex();
-    const MRT=2.3, MRB=2.0, MH=4.5;
-    addMesh(new THREE.CylinderGeometry(MRT,MRB,MH,20),         mkM(mHex,0.6),       x, MH/2, z);
-    addMesh(new THREE.CylinderGeometry(MRT-0.18,MRB-0.18,MH-0.25,20), mkM(0xF5F5F5,0.5), x, MH/2+0.12, z);
-    addMesh(new THREE.CylinderGeometry(MRT+0.06,MRT+0.06,0.16,20), mkM(mHex,0.6),   x, MH+0.08, z);
-    addMesh(new THREE.CylinderGeometry(MRT+0.07,MRT+0.07,0.45,20), mkM(sHex,0.5),   x, MH*0.55, z);
-    // C-shaped handle
-    const HX = x+MRT+1.0;
-    addMesh(new THREE.BoxGeometry(0.38,MH*0.46,0.38), mkM(mHex,0.6), HX, MH*0.50, z);
-    addMesh(new THREE.BoxGeometry(1.1,0.38,0.38),     mkM(mHex,0.6), x+MRT+0.45, MH*0.72, z);
-    addMesh(new THREE.BoxGeometry(1.1,0.38,0.38),     mkM(mHex,0.6), x+MRT+0.45, MH*0.28, z);
-    addPillarCol(x, z, MRT+0.12, MH+0.16);
-    addEP(x, z, MRT*0.75, MRT*0.75, MH+0.16);
-    addGlow(x, MH+0.6, z, hue, 0.5, 7);
-    occupied.push({ x, z, r: MRT+1.5 });
+    const hue  = [0.0,0.55,0.08,0.7,0.33,0.95][Math.floor(rand()*6)];
+    const mHex = new THREE.Color().setHSL(hue, 0.70, 0.45).getHex();
+    const sHex = new THREE.Color().setHSL(hue, 0.90, 0.28).getHex();
+    const lHex = new THREE.Color().setHSL(hue, 0.55, 0.62).getHex();
+    const MRT=2.4, MRB=2.0, MH=5.0;
+
+    // Saucer (flat disc with raised centre ring)
+    addMesh(new THREE.CylinderGeometry(3.3, 3.5, 0.28, 24), mkM(0xF0F0F0, 0.55), x, 0.14, z);
+    addMesh(new THREE.CylinderGeometry(2.0, 2.5, 0.20, 24), mkM(0xE8E8E8, 0.60), x, 0.38, z);
+    addMesh(new THREE.TorusGeometry(1.8, 0.10, 8, 24), mkM(0xE0E0E0, 0.5), x, 0.42, z);
+    addEP(x, z, 3.1, 3.1, 0.48);
+
+    // Mug body
+    const BY = 0.48; // mug sits on saucer
+    addMesh(new THREE.CylinderGeometry(MRT,   MRB,   MH,    24), mkM(mHex,0.60), x, BY+MH/2,     z);
+    addMesh(new THREE.CylinderGeometry(MRT-0.20,MRB-0.20,MH-0.35,24), mkM(0xF5F5F5,0.50), x, BY+MH/2+0.18, z);
+    // Thick rim band
+    addMesh(new THREE.CylinderGeometry(MRT+0.10,MRT+0.06,0.28,24), mkM(mHex,0.55), x, BY+MH+0.14, z);
+    // Design stripe (wide colour band)
+    addMesh(new THREE.CylinderGeometry(MRT+0.08,MRT+0.08,0.70,24), mkM(sHex,0.50), x, BY+MH*0.30, z);
+    // Thin accent line above stripe
+    addMesh(new THREE.CylinderGeometry(MRT+0.08,MRT+0.08,0.14,24), mkM(lHex,0.45), x, BY+MH*0.67, z);
+
+    // Handle — C-shape: two horizontal arms + outer vertical + sphere joints
+    const topY = BY+MH*0.76, botY = BY+MH*0.26, midY = (topY+botY)/2;
+    const HX = x+MRT+1.12;
+    addMesh(new THREE.BoxGeometry(0.44, topY-botY, 0.44), mkM(mHex,0.6), HX, midY, z);           // outer vertical
+    addMesh(new THREE.BoxGeometry(1.28, 0.44, 0.44), mkM(mHex,0.6), x+MRT+0.54, topY, z);        // top arm
+    addMesh(new THREE.BoxGeometry(1.28, 0.44, 0.44), mkM(mHex,0.6), x+MRT+0.54, botY, z);        // bottom arm
+    addMesh(new THREE.SphereGeometry(0.24, 8, 6), mkM(mHex,0.6), x+MRT+0.10, topY, z);           // top joint
+    addMesh(new THREE.SphereGeometry(0.24, 8, 6), mkM(mHex,0.6), x+MRT+0.10, botY, z);           // bottom joint
+    addMesh(new THREE.SphereGeometry(0.24, 8, 6), mkM(mHex,0.6), HX, topY, z);                   // outer top corner
+    addMesh(new THREE.SphereGeometry(0.24, 8, 6), mkM(mHex,0.6), HX, botY, z);                   // outer bottom corner
+
+    addPillarCol(x, z, MRT+0.12, BY+MH+0.28);
+    addEP(x, z, MRT*0.72, MRT*0.72, BY+MH+0.28);
+    addGlow(x, BY+MH+0.8, z, hue, 0.55, 9);
+    occupied.push({ x, z, r: MRT+1.8 });
   }
 
   // ── Crayons ────────────────────────────────────────────────────────
   function spawnCrayons(x, z) {
-    const CCOLORS=[0xE53935,0x1E88E5,0xF9A825,0x43A047,0xFF7043,0xAB47BC];
-    const n=3+Math.floor(rand()*3), CR=0.54, CH=7.5, TH=1.3;
-    const tipMat = mkM(0xFFF9C4, 0.45);
+    const CCOLORS=[0xE53935,0x1E88E5,0xF9A825,0x43A047,0xFF7043,0xAB47BC,0xE91E63,0x00ACC1];
+    const n=4+Math.floor(rand()*3), CR=0.54, TH=1.4;
+    const tipMat  = mkM(0xFFF9C4, 0.42);
+    const wrapMat = mkM(0xFAFAFA, 0.38);
+
+    // Small wooden tray to hold the crayons
+    const TW=5.0, TD=2.8, TH2=0.55, TWT=0.2;
+    addMesh(new THREE.BoxGeometry(TW, TH2, TD),          mkM(0xB5651D,0.88), x, TH2/2, z);
+    addMesh(new THREE.BoxGeometry(TW, TWT, 0.12),        mkM(0x8B4513,0.92), x, TH2, z); // front rim
+    addMesh(new THREE.BoxGeometry(0.12, TWT, TD),        mkM(0x8B4513,0.92), x, TH2, z); // side rim
+    // Tray inner darker floor
+    addMesh(new THREE.BoxGeometry(TW-TWT*2, 0.06, TD-TWT*2), mkM(0x8B4513,0.95), x, TH2, z);
+    addEP(x, z, TW/2, TD/2, TH2);
+
     for (let i = 0; i < n; i++) {
-      const a=i/n*Math.PI*2+rand()*0.5, dist=0.55+rand()*0.9;
-      const cx=x+Math.cos(a)*dist, cz=z+Math.sin(a)*dist;
-      const col=CCOLORS[i%CCOLORS.length];
-      // Body with slight lean
-      const body=new THREE.Mesh(new THREE.CylinderGeometry(CR,CR,CH,10), mkM(col,0.5));
-      body.position.set(cx,CH/2,cz); body.rotation.z=(rand()-0.5)*0.18;
-      body.castShadow=true; scene.add(body); pillarMeshes.push(body);
-      // White label band
-      const wrap=new THREE.Mesh(new THREE.CylinderGeometry(CR+0.03,CR+0.03,CH*0.35,10), mkM(0xFAFAFA,0.4));
-      wrap.position.set(cx,CH*0.45,cz); scene.add(wrap); pillarMeshes.push(wrap);
-      // Pointed tip
-      const tip=new THREE.Mesh(new THREE.ConeGeometry(CR,TH,10), tipMat);
-      tip.position.set(cx,CH+TH/2,cz); scene.add(tip); pillarMeshes.push(tip);
-      addPillarCol(cx, cz, CR+0.15, CH+TH);
+      const a    = (i/n)*Math.PI*2 + rand()*0.5;
+      const dist = 0.8 + rand()*1.1;
+      const cx   = x + Math.cos(a)*dist, cz2 = z + Math.sin(a)*dist;
+      const CH   = 7.2 + rand()*1.6;   // varying crayon heights
+      const col  = CCOLORS[i%CCOLORS.length];
+      const leanA = rand()*Math.PI*2;
+      const leanAmt = 0.10 + rand()*0.12;
+
+      function addRaw(geo, mat2, py) {
+        const m = new THREE.Mesh(geo, mat2);
+        m.position.set(cx, py, cz2);
+        m.rotation.x = Math.cos(leanA)*leanAmt;
+        m.rotation.z = Math.sin(leanA)*leanAmt;
+        m.castShadow = true; scene.add(m); pillarMeshes.push(m);
+        return m;
+      }
+      // Body
+      addRaw(new THREE.CylinderGeometry(CR, CR, CH, 10), mkM(col,0.50), TH2+CH/2);
+      // White paper wrapper (lower 62% of body)
+      addRaw(new THREE.CylinderGeometry(CR+0.04, CR+0.04, CH*0.62, 10), wrapMat, TH2+CH*0.31);
+      // Colour band at wrapper top edge
+      addRaw(new THREE.CylinderGeometry(CR+0.05, CR+0.05, 0.20, 10), mkM(col,0.42), TH2+CH*0.62);
+      // Hex sharpened tip (6-sided cone for hexagonal crayon look)
+      addRaw(new THREE.ConeGeometry(CR, TH, 6), tipMat, TH2+CH+TH/2);
+
+      addPillarCol(cx, cz2, CR+0.18, TH2+CH+TH);
     }
-    addGlow(x, CH+1.5, z, rand(), 0.6, 8);
-    occupied.push({ x, z, r: 2.2 });
+    addGlow(x, 10.5, z, rand(), 0.65, 10);
+    occupied.push({ x, z, r: 3.0 });
   }
 
   // ── Place structures ──────────────────────────────────────────────
