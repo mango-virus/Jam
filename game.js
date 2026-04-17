@@ -448,13 +448,13 @@ function getTileAt(x, z) {
 
 function isTileGone(x, z) {
   const t = getTileAt(x, z);
-  return t !== null && t.state === 'gone';
+  return t !== null && (t.state === 'breaking' || t.state === 'gone');
 }
 
 // Returns true once a tile is no longer safe to stand/place things on.
 function isTileUnstable(x, z) {
   const t = getTileAt(x, z);
-  return t !== null && (t.state === 'sinking' || t.state === 'gone');
+  return t !== null && (t.state === 'breaking' || t.state === 'gone');
 }
 
 // ------------------------------------------------------------------
@@ -4144,7 +4144,7 @@ function updateGoblinEvent(dt) {
     } else {
       // ── Tile safety: if the tile we're standing on is sinking/gone, jump to safety ──
       const curTile = getTileAt(goblinX, goblinZ);
-      if (!curTile || curTile.state === 'sinking' || curTile.state === 'gone') {
+      if (!curTile || curTile.state === 'breaking' || curTile.state === 'gone') {
         const safe = findNearestSolidTile(goblinX, goblinZ);
         if (safe) {
           goblinJumpTargetX = safe.cx;
@@ -4187,7 +4187,7 @@ function updateGoblinEvent(dt) {
           const nx = dx / dist, nz = dz / dist;
           const stepX = goblinX + nx * 1.8, stepZ = goblinZ + nz * 1.8;
           const stepTile = getTileAt(stepX, stepZ);
-          if (stepTile && (stepTile.state === 'sinking' || stepTile.state === 'gone')) {
+          if (stepTile && (stepTile.state === 'breaking' || stepTile.state === 'gone')) {
             // Gap ahead — jump directly to target tile
             goblinJumpTargetX = targetX;
             goblinJumpTargetZ = targetZ;
