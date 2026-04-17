@@ -5713,6 +5713,7 @@ function enterSpectatorMode() {
   spectateTarget = pickNextSpectateTarget(null);
   spectateYaw    = 0;
   scene.remove(playerGroup);   // remove from scene so nobody sees it
+  window.MenuMusic?.duck(MUSIC_GAME_MULT); // match the in-game music level
   broadcastSelf();              // immediately tell peers spectating: true
   if (anyPeerInMatch() && lastMatchSeed) {
     // Reconstruct the arena so the spectator can see tiles, structures, and events
@@ -5750,6 +5751,7 @@ function exitSpectatorMode() {
   isSpectating   = false;
   spectateTarget = null;
   // playerGroup stays out of scene — returnToLobby (called next) handles cleanup
+  window.MenuMusic?.unduck(); // restore lobby music volume
   broadcastSelf();              // immediately tell peers spectating: false
   spectatorHudEl && (spectatorHudEl.style.display = 'none');
   document.exitPointerLock();
