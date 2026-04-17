@@ -586,20 +586,23 @@ function makeCharacter(hexColor) {
   // (pointing forward like the sword/bat). Pieces are centred around y=0 so
   // the character grips the middle of the banana.
   const bananaGroup = new THREE.Group();
-  bananaGroup.position.set(0, -0.54, 0.22);
+  // z=0.26 keeps the bottom tip (cy=-0.22 → z=0.04) just clear of the body.
+  // cy=0 is the true arc midpoint so the palm grips the centre of the banana.
+  bananaGroup.position.set(0, -0.54, 0.26);
   bananaGroup.rotation.x = Math.PI / 2;
   bananaGroup.visible = false;
   const banMat  = new THREE.MeshStandardMaterial({ color: 0xffe135, roughness: 0.65 });
   const bTipMat = new THREE.MeshStandardMaterial({ color: 0x7a5200, roughness: 0.8 });
-  // Arc pieces with progressive rotation.z — centred so y=0 is the grip midpoint.
-  // Total arc spans y ≈ -0.22 to +0.22 (about 0.44 long — compact, not stick-like).
+  // cx is positive (bows outward, away from body since right arm is at +X).
+  // rot.z is negated vs the old version — arc tilts the other way to match.
+  // cy is symmetric around 0 so the grip is dead-centre.
   [
-    { cx: -0.010, cy: -0.210, rot:  0.52, h: 0.044, w: 0.040, mat: bTipMat },
-    { cx: -0.044, cy: -0.115, rot:  0.28, h: 0.140, w: 0.066, mat: banMat  },
-    { cx: -0.058, cy:  0.012, rot:  0.00, h: 0.120, w: 0.072, mat: banMat  },
-    { cx: -0.036, cy:  0.125, rot: -0.28, h: 0.110, w: 0.064, mat: banMat  },
-    { cx:  0.006, cy:  0.205, rot: -0.52, h: 0.080, w: 0.050, mat: banMat  },
-    { cx:  0.038, cy:  0.248, rot: -0.72, h: 0.038, w: 0.036, mat: bTipMat },
+    { cx:  0.010, cy: -0.220, rot: -0.52, h: 0.044, w: 0.040, mat: bTipMat },
+    { cx:  0.044, cy: -0.120, rot: -0.28, h: 0.140, w: 0.066, mat: banMat  },
+    { cx:  0.058, cy:  0.000, rot:  0.00, h: 0.120, w: 0.072, mat: banMat  },
+    { cx:  0.036, cy:  0.110, rot:  0.28, h: 0.110, w: 0.064, mat: banMat  },
+    { cx:  0.006, cy:  0.193, rot:  0.52, h: 0.080, w: 0.050, mat: banMat  },
+    { cx: -0.038, cy:  0.232, rot:  0.72, h: 0.038, w: 0.036, mat: bTipMat },
   ].forEach(({ cx, cy, rot, h, w, mat }) => {
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, w), mat);
     m.position.set(cx, cy, 0);
