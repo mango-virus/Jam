@@ -836,7 +836,11 @@ const BAT_HOME_RUN_KNOCKBACK = 260;
 const BAT_NORMAL_KNOCKBACK  = 8;
 
 let itemTimer  = Date.now() + 5000; // first item after 5s
-const groundItems = []; // { group, type, x, z }
+const groundItems = []; // { group, type, x, z, id, expires }
+let isHost = false;         // true for the player who started the match (item authority)
+let sendItemEvent = null;   // P2P action for item sync
+let _nextItemId = 0;
+function nextItemId() { return ++_nextItemId; }
 let hasSword       = false;
 let swordDurability  = 0;
 let hasShield      = false;
@@ -875,7 +879,7 @@ function randomItemPos() {
   return null;
 }
 
-function makeGroundItem(type, x, z) {
+function makeGroundItem(type, x, z, id = nextItemId()) {
   const g = new THREE.Group();
   if (type === 'sword') {
     const blade = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.55, 0.06),
@@ -970,7 +974,7 @@ function makeGroundItem(type, x, z) {
   }
   g.position.set(x, 0.1, z);
   scene.add(g);
-  return { group: g, type, x, z, expires: performance.now() / 1000 + ITEM_LIFETIME };
+  return { group: g, type, x, z, id, expires: performance.now() / 1000 + ITEM_LIFETIME };
 }
 
 function pipBar(cur, max) {
@@ -1052,26 +1056,16 @@ function breakShield() {
 function dropItem() {
   const px = playerGroup.position.x, pz = playerGroup.position.z;
   const dropAngle = playerGroup.rotation.y + Math.PI;
-  if (hasSword) {
-    groundItems.push(makeGroundItem('sword', px + Math.sin(dropAngle) * 1.2, pz + Math.cos(dropAngle) * 1.2));
-    hasSword = false; swordDurability = 0; playerSword.visible = false;
+  function spawnDrop(type, dist) {
+    const it = makeGroundItem(type, px + Math.sin(dropAngle) * dist, pz + Math.cos(dropAngle) * dist);
+    groundItems.push(it);
+    sendItemEvent?.({ act: 'drop', id: it.id, type: it.type, x: it.x, z: it.z });
   }
-  if (hasGlove) {
-    groundItems.push(makeGroundItem('glove', px + Math.sin(dropAngle) * 1.2, pz + Math.cos(dropAngle) * 1.2));
-    hasGlove = false; gloveDurability = 0; playerGlove.visible = false;
-  }
-  if (hasBat) {
-    groundItems.push(makeGroundItem('bat', px + Math.sin(dropAngle) * 1.2, pz + Math.cos(dropAngle) * 1.2));
-    hasBat = false; batDurability = 0; playerBat.visible = false;
-  }
-  if (hasBoots) {
-    groundItems.push(makeGroundItem('boots', px + Math.sin(dropAngle) * 0.8, pz + Math.cos(dropAngle) * 0.8));
-    hasBoots = false; bootsDurability = 0; playerBoots.visible = false; hasDoubleJumped = false;
-  }
-  if (hasShield) {
-    groundItems.push(makeGroundItem('shield', px + Math.sin(dropAngle) * 0.6, pz + Math.cos(dropAngle) * 0.6));
-    hasShield = false; shieldDurability = 0; playerShield.visible = false;
-  }
+  if (hasSword)  { spawnDrop('sword',  1.2); hasSword  = false; swordDurability  = 0; playerSword.visible  = false; }
+  if (hasGlove)  { spawnDrop('glove',  1.2); hasGlove  = false; gloveDurability  = 0; playerGlove.visible  = false; }
+  if (hasBat)    { spawnDrop('bat',    1.2); hasBat    = false; batDurability    = 0; playerBat.visible    = false; }
+  if (hasBoots)  { spawnDrop('boots',  0.8); hasBoots  = false; bootsDurability  = 0; playerBoots.visible  = false; hasDoubleJumped = false; }
+  if (hasShield) { spawnDrop('shield', 0.6); hasShield = false; shieldDurability = 0; playerShield.visible = false; }
   updateDurabilityHUD();
 }
 
@@ -1264,7 +1258,33 @@ async function setupMultiplayer() {
       }
     });
 
-    room.onPeerJoin(() => { broadcastSelf(); refreshPeerCount(); });
+    const [sItem, onItem] = room.makeAction('item');
+    sendItemEvent = sItem;
+    onItem((data) => {
+      if (data.act === 'spawn' || data.act === 'drop') {
+        // Add item if we don't already have it (dedup in case of rebroadcast)
+        if (!groundItems.some(it => it.id === data.id)) {
+          groundItems.push(makeGroundItem(data.type, data.x, data.z, data.id));
+        }
+      } else if (data.act === 'pickup' || data.act === 'remove') {
+        const idx = groundItems.findIndex(it => it.id === data.id);
+        if (idx !== -1) {
+          scene.remove(groundItems[idx].group);
+          groundItems.splice(idx, 1);
+        }
+      }
+    });
+
+    room.onPeerJoin((peerId) => {
+      broadcastSelf();
+      refreshPeerCount();
+      // Host sends all current ground items to the newly joined peer
+      if (isHost && gameState === 'playing') {
+        for (const it of groundItems) {
+          sItem({ act: 'spawn', id: it.id, type: it.type, x: it.x, z: it.z }, peerId);
+        }
+      }
+    });
     room.onPeerLeave(id => { removePeer(id); refreshPeerCount(); });
 
     getState((data, peerId) => {
@@ -1402,34 +1422,30 @@ document.addEventListener('keydown', e => {
     for (let i = groundItems.length - 1; i >= 0; i--) {
       const it = groundItems[i];
       if (Math.hypot(px - it.x, pz - it.z) < ITEM_PICKUP_R) {
-        // Drop same-slot item first if already held
+        // Helper: drop current item and broadcast it
         const dropAngle = playerGroup.rotation.y + Math.PI;
-        // Sword, glove, and bat all share the right-hand weapon slot — swap out whatever is held
+        function swapDrop(type, dist) {
+          const dropped = makeGroundItem(type, px + Math.sin(dropAngle) * dist, pz + Math.cos(dropAngle) * dist);
+          groundItems.push(dropped);
+          sendItemEvent?.({ act: 'drop', id: dropped.id, type: dropped.type, x: dropped.x, z: dropped.z });
+        }
         const isWeapon = it.type === 'sword' || it.type === 'glove' || it.type === 'bat';
-        // Boots are a separate slot — picking them up doesn't drop weapons
         if (it.type === 'boots' && hasBoots) {
-          // Already have boots, drop old ones first
-          groundItems.push(makeGroundItem('boots', px + Math.sin(dropAngle) * 0.8, pz + Math.cos(dropAngle) * 0.8));
+          swapDrop('boots', 0.8);
           hasBoots = false; bootsDurability = 0; playerBoots.visible = false; hasDoubleJumped = false;
         }
-        if (isWeapon && hasSword) {
-          groundItems.push(makeGroundItem('sword', px + Math.sin(dropAngle) * 1.2, pz + Math.cos(dropAngle) * 1.2));
-          hasSword = false; swordDurability = 0; playerSword.visible = false;
-        }
-        if (isWeapon && hasGlove) {
-          groundItems.push(makeGroundItem('glove', px + Math.sin(dropAngle) * 1.2, pz + Math.cos(dropAngle) * 1.2));
-          hasGlove = false; gloveDurability = 0; playerGlove.visible = false;
-        }
-        if (isWeapon && hasBat) {
-          groundItems.push(makeGroundItem('bat', px + Math.sin(dropAngle) * 1.2, pz + Math.cos(dropAngle) * 1.2));
-          hasBat = false; batDurability = 0; playerBat.visible = false;
-        }
+        if (isWeapon && hasSword)  { swapDrop('sword',  1.2); hasSword  = false; swordDurability  = 0; playerSword.visible  = false; }
+        if (isWeapon && hasGlove)  { swapDrop('glove',  1.2); hasGlove  = false; gloveDurability  = 0; playerGlove.visible  = false; }
+        if (isWeapon && hasBat)    { swapDrop('bat',    1.2); hasBat    = false; batDurability    = 0; playerBat.visible    = false; }
         if (it.type === 'shield' && hasShield) {
-          groundItems.push(makeGroundItem('shield', px + Math.sin(dropAngle) * 0.6, pz + Math.cos(dropAngle) * 0.6));
+          swapDrop('shield', 0.6);
           hasShield = false; shieldDurability = 0; playerShield.visible = false;
         }
+        // Remove the picked-up item and tell all peers
+        const pickedId = it.id;
         scene.remove(it.group);
         groundItems.splice(i, 1);
+        sendItemEvent?.({ act: 'pickup', id: pickedId });
         equipItem(it.type);
         break;
       }
@@ -1740,6 +1756,7 @@ function returnToLobby() {
 
 function startGame(seed, broadcast) {
   gameState  = 'playing';
+  isHost     = !!broadcast; // the player who starts the game owns item spawning
   localLives = 3 + (hasArmor ? 1 : 0);
   isGhost    = false;
   isDead     = false;
@@ -2158,37 +2175,38 @@ function loop(now) {
     camera.lookAt(0, 2, 0);
   }
 
-  // --- Item spawning ---
-  if (gameState === 'playing' && Date.now() >= itemTimer && groundItems.length < MAX_ITEMS) {
+  // --- Item spawning (host only — result broadcast to all peers) ---
+  if (gameState === 'playing' && isHost && Date.now() >= itemTimer && groundItems.length < MAX_ITEMS) {
     itemTimer = Date.now() + ITEM_INTERVAL;
     const pos = randomItemPos();
     if (pos) {
       const r = Math.random();
-    const type = r < 0.20 ? 'sword' : r < 0.40 ? 'shield' : r < 0.60 ? 'glove' : r < 0.80 ? 'bat' : 'boots';
-      groundItems.push(makeGroundItem(type, pos.x, pos.z));
+      const type = r < 0.20 ? 'sword' : r < 0.40 ? 'shield' : r < 0.60 ? 'glove' : r < 0.80 ? 'bat' : 'boots';
+      const it = makeGroundItem(type, pos.x, pos.z);
+      groundItems.push(it);
+      sendItemEvent?.({ act: 'spawn', id: it.id, type: it.type, x: it.x, z: it.z });
     }
   }
 
   // --- Ground item bobbing, expiry, and tile removal ---
   for (let i = groundItems.length - 1; i >= 0; i--) {
     const it = groundItems[i];
+    let removed = false;
     if (isTileUnstable(it.x, it.z)) {
       scene.remove(it.group);
       groundItems.splice(i, 1);
+      if (isHost) sendItemEvent?.({ act: 'remove', id: it.id });
       continue;
     }
     const timeLeft = it.expires - time;
     if (timeLeft <= 0) {
       scene.remove(it.group);
       groundItems.splice(i, 1);
+      if (isHost) sendItemEvent?.({ act: 'remove', id: it.id });
       continue;
     }
     // Flicker in the last 3 seconds to warn players it's about to vanish
-    if (timeLeft < 3) {
-      it.group.visible = Math.sin(time * 18) > 0;
-    } else {
-      it.group.visible = true;
-    }
+    it.group.visible = timeLeft < 3 ? Math.sin(time * 18) > 0 : true;
     it.group.position.y = 0.1 + Math.sin(time * 2.5 + it.x) * 0.08;
     it.group.rotation.y += dt * 1.2;
   }
