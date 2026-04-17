@@ -527,22 +527,51 @@ function makeCharacter(hexColor) {
   rightArmMesh.castShadow = true;
   rightArm.add(rightArmMesh);
 
-  // Sword (shown in right hand when equipped)
+  // Sword (shown in right hand when equipped) — knight's longsword
   const swordGroup = new THREE.Group();
   swordGroup.position.set(0, -0.55, 0.12);
   swordGroup.rotation.x = Math.PI / 2;
   swordGroup.visible = false;
-  const sBlade = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.5, 0.05),
-    new THREE.MeshStandardMaterial({ color: 0xd0d8e8, metalness: 0.9, roughness: 0.15 }));
-  sBlade.position.y = 0.27;
+  const sBladeMat   = new THREE.MeshStandardMaterial({ color: 0xd4dcea, metalness: 0.92, roughness: 0.10 });
+  const sFullerMat  = new THREE.MeshStandardMaterial({ color: 0x9aaabf, metalness: 0.88, roughness: 0.14 });
+  const sGoldMat    = new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.88, roughness: 0.14 });
+  const sLeatherMat = new THREE.MeshStandardMaterial({ color: 0x5c3a1e, roughness: 0.85 });
+  const sWrapMat    = new THREE.MeshStandardMaterial({ color: 0x3a2010, roughness: 0.90 });
+  // Blade — wide and flat
+  const sBlade = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.52, 0.034), sBladeMat);
+  sBlade.position.y = 0.295;
   swordGroup.add(sBlade);
-  const sGuard = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.04, 0.06),
-    new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.8, roughness: 0.2 }));
+  // Fuller — central channel running the length of the blade
+  const sFuller = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.40, 0.038), sFullerMat);
+  sFuller.position.y = 0.30;
+  swordGroup.add(sFuller);
+  // Ricasso — unsharpened base of blade, slightly thicker
+  const sRicasso = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.06, 0.048), sBladeMat);
+  sRicasso.position.y = 0.045;
+  swordGroup.add(sRicasso);
+  // Crossguard — long ornate bar
+  const sGuard = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.052, 0.072), sGoldMat);
   swordGroup.add(sGuard);
-  const sHandle = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.18, 0.04),
-    new THREE.MeshStandardMaterial({ color: 0x5c3a1e, roughness: 0.8 }));
-  sHandle.position.y = -0.1;
-  swordGroup.add(sHandle);
+  // Guard-tip knobs
+  for (const sx of [-0.185, 0.185]) {
+    const sKnob = new THREE.Mesh(new THREE.SphereGeometry(0.038, 7, 6), sGoldMat);
+    sKnob.position.set(sx, 0, 0);
+    swordGroup.add(sKnob);
+  }
+  // Grip — leather core
+  const sGrip = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.17, 0.042), sLeatherMat);
+  sGrip.position.y = -0.10;
+  swordGroup.add(sGrip);
+  // Grip wrap bands
+  for (let wi = 0; wi < 3; wi++) {
+    const sWrap = new THREE.Mesh(new THREE.BoxGeometry(0.054, 0.024, 0.054), sWrapMat);
+    sWrap.position.y = -0.042 + wi * -0.058;
+    swordGroup.add(sWrap);
+  }
+  // Pommel — round gold ball
+  const sPommel = new THREE.Mesh(new THREE.SphereGeometry(0.056, 8, 7), sGoldMat);
+  sPommel.position.y = -0.205;
+  swordGroup.add(sPommel);
   rightArm.add(swordGroup);
 
   // Boxing glove (shown in right hand when equipped)
@@ -1160,18 +1189,49 @@ function randomItemPos() {
 function makeGroundItem(type, x, z, id = nextItemId()) {
   const g = new THREE.Group();
   if (type === 'sword') {
-    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.55, 0.06),
-      new THREE.MeshStandardMaterial({ color: 0xd0d8e8, metalness: 0.9, roughness: 0.15 }));
-    blade.position.y = 0.35;
-    g.add(blade);
-    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.05, 0.06),
-      new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.8, roughness: 0.2 }));
-    guard.position.y = 0.1;
-    g.add(guard);
-    const handle = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.2, 0.05),
-      new THREE.MeshStandardMaterial({ color: 0x5c3a1e, roughness: 0.8 }));
-    handle.position.y = -0.05;
-    g.add(handle);
+    // Knight's longsword — matches the equipped model geometry/materials
+    const gBladeMat   = new THREE.MeshStandardMaterial({ color: 0xd4dcea, metalness: 0.92, roughness: 0.10 });
+    const gFullerMat  = new THREE.MeshStandardMaterial({ color: 0x9aaabf, metalness: 0.88, roughness: 0.14 });
+    const gGoldMat    = new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.88, roughness: 0.14 });
+    const gLeatherMat = new THREE.MeshStandardMaterial({ color: 0x5c3a1e, roughness: 0.85 });
+    const gWrapMat    = new THREE.MeshStandardMaterial({ color: 0x3a2010, roughness: 0.90 });
+    // Assemble sword upright along Y (guard at y=0.10, blade above, handle/pommel below)
+    // Blade
+    const gBlade = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.52, 0.034), gBladeMat);
+    gBlade.position.y = 0.425;
+    g.add(gBlade);
+    // Fuller
+    const gFuller = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.40, 0.038), gFullerMat);
+    gFuller.position.y = 0.43;
+    g.add(gFuller);
+    // Ricasso
+    const gRicasso = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.06, 0.048), gBladeMat);
+    gRicasso.position.y = 0.175;
+    g.add(gRicasso);
+    // Crossguard
+    const gGuard = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.052, 0.072), gGoldMat);
+    gGuard.position.y = 0.13;
+    g.add(gGuard);
+    // Guard-tip knobs
+    for (const gx of [-0.185, 0.185]) {
+      const gKnob = new THREE.Mesh(new THREE.SphereGeometry(0.038, 7, 6), gGoldMat);
+      gKnob.position.set(gx, 0.13, 0);
+      g.add(gKnob);
+    }
+    // Grip
+    const gGrip = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.17, 0.042), gLeatherMat);
+    gGrip.position.y = 0.025;
+    g.add(gGrip);
+    // Wrap bands
+    for (let wi = 0; wi < 3; wi++) {
+      const gWrap = new THREE.Mesh(new THREE.BoxGeometry(0.054, 0.024, 0.054), gWrapMat);
+      gWrap.position.y = 0.088 + wi * -0.058;
+      g.add(gWrap);
+    }
+    // Pommel
+    const gPommel = new THREE.Mesh(new THREE.SphereGeometry(0.056, 8, 7), gGoldMat);
+    gPommel.position.y = -0.075;
+    g.add(gPommel);
   } else if (type === 'shield') {
     // Heater / knight's shield — silver with gold cross, sitting upright on ground
     const gShMat  = new THREE.MeshStandardMaterial({ color: 0xa8b8c8, metalness: 0.75, roughness: 0.22 });
@@ -1240,20 +1300,33 @@ function makeGroundItem(type, x, z, id = nextItemId()) {
     batMesh.position.y = 0.05;
     g.add(batMesh);
   } else if (type === 'boots') {
-    const bMat = new THREE.MeshStandardMaterial({ color: 0x555566, roughness: 0.4, metalness: 0.6 });
+    // Matches the equipped character boots (makeOneBoot) exactly
+    const bMat = new THREE.MeshStandardMaterial({ color: 0x333344, roughness: 0.35, metalness: 0.75 });
     const tMat = new THREE.MeshStandardMaterial({ color: 0xff6600, emissive: new THREE.Color(0xff3300), emissiveIntensity: 0.8, roughness: 0.3 });
     for (const side of [-1, 1]) {
       const boot = new THREE.Group();
-      boot.position.set(side * 0.15, 0, 0);
-      const sole = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.1, 0.32), bMat);
-      sole.position.y = 0.05;
+      // Lift so boot sole bottom sits at y=0
+      boot.position.set(side * 0.19, 0.05, 0);
+      // Sole
+      const sole = new THREE.Mesh(new THREE.BoxGeometry(0.21, 0.10, 0.30), bMat);
       boot.add(sole);
-      const thruster = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.14, 8), tMat);
-      thruster.position.set(0, -0.03, 0);
+      // Ankle cuff
+      const cuff = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.14, 0.22), bMat);
+      cuff.position.y = 0.12;
+      boot.add(cuff);
+      // Heel thruster — horizontal cylinder, nozzle faces backward
+      const thruster = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.06, 0.16, 8), tMat);
+      thruster.rotation.x = Math.PI / 2;
+      thruster.position.set(0, 0.06, -0.20);
       boot.add(thruster);
-      const fin = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.1, 0.05), bMat);
-      fin.position.set(0, 0.08, -0.1);
-      boot.add(fin);
+      // Side fins
+      const finGeo = new THREE.BoxGeometry(0.04, 0.14, 0.10);
+      const finL = new THREE.Mesh(finGeo, bMat);
+      finL.position.set( 0.13, 0.07, -0.08);
+      boot.add(finL);
+      const finR = new THREE.Mesh(finGeo, bMat);
+      finR.position.set(-0.13, 0.07, -0.08);
+      boot.add(finR);
       g.add(boot);
     }
     // Faint orange glow
