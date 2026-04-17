@@ -1978,7 +1978,6 @@ function startGame(seed, broadcast) {
   isDead     = false;
   ghostPunchCooldown = 0;
   lastHitBy  = null;
-  window.MenuMusic?.stop();
   window.GameMusic?.stop();
   // Clear any leftover items and reset spawn timer
   for (const it of groundItems) scene.remove(it.group);
