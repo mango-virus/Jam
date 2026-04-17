@@ -1282,16 +1282,33 @@ function makeGroundItem(type, x, z, id = nextItemId()) {
     g.add(bMeshG);
     const bGlow = new THREE.PointLight(0xffee00, 0.5, 2.0);
     bGlow.position.y = 0.35; g.add(bGlow);
-  } else { // glove
-    const body = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8),
-      new THREE.MeshStandardMaterial({ color: 0xcc2200, roughness: 0.55, metalness: 0.08 }));
-    body.scale.set(1.35, 1.05, 1.2);
-    body.position.y = 0.24;
-    g.add(body);
-    const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.11, 12),
+  } else { // glove — matches the equipped version geometry
+    const gGloveMat = new THREE.MeshStandardMaterial({ color: 0xcc2200, roughness: 0.55, metalness: 0.08 });
+    // Main glove body (sphere, scaled wider than tall)
+    const gBody = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 10), gGloveMat);
+    gBody.scale.set(1.4, 1.25, 1.3);
+    gBody.position.y = 0.26;
+    g.add(gBody);
+    // Knuckle ridge
+    const gKnuckle = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.072, 0.085),
+      new THREE.MeshStandardMaterial({ color: 0xdd3300, roughness: 0.5 }));
+    gKnuckle.position.set(0, 0.275, 0.22);
+    g.add(gKnuckle);
+    // Thumb stub
+    const gThumb = new THREE.Mesh(new THREE.SphereGeometry(0.096, 8, 6), gGloveMat);
+    gThumb.scale.set(0.7, 1.05, 0.8);
+    gThumb.position.set(0.24, 0.29, 0.06);
+    g.add(gThumb);
+    // White wrist cuff
+    const gCuff = new THREE.Mesh(new THREE.CylinderGeometry(0.145, 0.145, 0.13, 12),
       new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85 }));
-    cuff.position.y = 0.42;
-    g.add(cuff);
+    gCuff.position.y = 0.48;
+    g.add(gCuff);
+    // Velcro strap
+    const gStrap = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.042, 0.15),
+      new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.9 }));
+    gStrap.position.set(0, 0.525, 0.05);
+    g.add(gStrap);
     const glow = new THREE.PointLight(0xff4400, 0.6, 2.5);
     glow.position.y = 0.3;
     g.add(glow);
