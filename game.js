@@ -2604,7 +2604,7 @@ let pitch = 0.2;
 let isLocked = false;
 
 renderer.domElement.addEventListener('click', () => {
-  if (gameState === 'playing') renderer.domElement.requestPointerLock();
+  if (gameState === 'playing' && !isSpectating) renderer.domElement.requestPointerLock();
 });
 
 // Mute button + volume slider (HUD copies + lobby menu copies stay in sync)
@@ -3135,6 +3135,7 @@ function dropItemsOnDeath() {
 }
 
 function die(opts = {}) {
+  if (isSpectating) return;
   if (isDead || isGhost) return;
   if (spawnImmunityTimer > 0) return; // immune after respawn
   dropItemsOnDeath();
@@ -3218,9 +3219,9 @@ function respawn() {
 
 function checkWinCondition() {
   if (gameState !== 'playing') return;
-  // Count alive (non-ghost) players including self
-  let aliveCount = isGhost ? 0 : 1;
-  let aliveNames = isGhost ? [] : [incoming.username];
+  // Count alive (non-ghost, non-spectating) players including self
+  let aliveCount = (isGhost || isSpectating) ? 0 : 1;
+  let aliveNames = (isGhost || isSpectating) ? [] : [incoming.username];
   for (const peer of peers.values()) {
     if (!peer.isGhost) { aliveCount++; aliveNames.push(peer.username || '?'); }
   }
@@ -3337,7 +3338,7 @@ function returnToLobby() {
 function startGame(seed, broadcast) {
   gameState  = 'playing';
   isHost     = !!broadcast; // the player who starts the game owns item spawning
-  localLives = 3 + (hasArmor ? 1 : 0);
+  localLives = isSpectating ? 0 : 3 + (hasArmor ? 1 : 0);
   isGhost             = false;
   isDead              = false;
   homeRunDeath        = false;
@@ -3402,20 +3403,24 @@ function startGame(seed, broadcast) {
   for (const t of tileObjects) { cleanupTileBreak(t); t.state = 'solid'; t.timer = 0; t.mesh.visible = true; t.mesh.position.y = -2; t.mesh.material.color.copy(t.solidColor); }
   // Hide main platform mesh so tiles take over visually
   platform.visible = false;
-  // Spawn player on center pillar
-  playerGroup.position.set(SPAWN_X, SPAWN_Y, SPAWN_Z);
-  velY = 0; velX = 0; velZ = 0; windVelX = 0; windVelZ = 0;
-  onGround = false;
-  playerArmorGroup.visible = hasArmor;
+  if (!isSpectating) {
+    // Spawn player on center pillar
+    playerGroup.position.set(SPAWN_X, SPAWN_Y, SPAWN_Z);
+    velY = 0; velX = 0; velZ = 0; windVelX = 0; windVelZ = 0;
+    onGround = false;
+    playerArmorGroup.visible = hasArmor;
+  }
   if (menuEl) menuEl.classList.remove('active');
   if (deathEl) deathEl.style.display = 'none';
   if (broadcast) {
     sendGameEvent?.({ type: 'start', seed });
   }
-  updateLivesHUD();
-  updatePeerLivesHUD();
-  // Capture pointer
-  renderer.domElement.requestPointerLock();
+  if (!isSpectating) {
+    updateLivesHUD();
+    updatePeerLivesHUD();
+    // Capture pointer
+    renderer.domElement.requestPointerLock();
+  }
   // game time for tile tracking is handled via gameTime variable in loop
 }
 
@@ -5139,6 +5144,8 @@ function loop(now) {
     if (gameOverTimer <= 0) returnToLobby();
   }
 
+  // --- Player physics (skipped entirely while spectating) ---
+  if (!isSpectating) {
   // --- Movement ---
   _euler.set(0, yaw, 0);
   _dir.set(0, 0, 0);
@@ -5370,6 +5377,7 @@ function loop(now) {
   if (playerGroup.position.y < FALL_DEATH_Y) die();
 
   } // end !isGhost physics block
+  } // end !isSpectating physics block
 
   // Local limb swing — faster when sprinting
   const swingSpeed = isSprinting ? 13 : 8;
@@ -5393,7 +5401,7 @@ function loop(now) {
   }
 
   // --- Camera ---
-  if (gameState === 'playing') {
+  if (gameState === 'playing' && !isSpectating) {
     // Third-person follow camera
     const camBack = Math.cos(pitch) * CAM_DIST;
     const camUp   = Math.sin(pitch) * CAM_DIST;
