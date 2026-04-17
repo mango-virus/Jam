@@ -746,7 +746,7 @@ function makeCharacter(hexColor) {
   });
   rightArm.add(bananaGroup);
 
-  // Black hole grenade (shown in right hand when equipped)
+  // Gravity Bomb (shown in right hand when equipped)
   const grenadeGroup = new THREE.Group();
   grenadeGroup.position.set(0, -0.55, 0.10);
   grenadeGroup.visible = false;
@@ -1674,7 +1674,7 @@ function updateDurabilityHUD() {
   if (hasBoots)   parts.push(`🚀 ${pipBar(bootsDurability,  BOOTS_DURABILITY)}`);
   if (hasShield)  parts.push(`🛡 ${pipBar(shieldDurability, SHIELD_DURABILITY)}`);
   if (hasBanana)  parts.push(`🍌 ${pipBar(bananaDurability, BANANA_DURABILITY)}`);
-  if (hasBlackHoleGrenade) parts.push('🕳️ Grenade');
+  if (hasBlackHoleGrenade) parts.push('🕳️ Gravity Bomb');
   durabilityEl.innerHTML = parts.join('&nbsp;&nbsp;');
 }
 
@@ -2207,17 +2207,16 @@ document.addEventListener('keydown', e => {
           groundItems.push(dropped);
           sendItemEvent?.({ act: 'drop', id: dropped.id, type: dropped.type, x: dropped.x, z: dropped.z });
         }
-        // Grenade: can only hold one at a time, don't allow second pickup
-        if (it.type === 'grenade' && hasBlackHoleGrenade) continue;
-        const isWeapon = it.type === 'sword' || it.type === 'glove' || it.type === 'bat' || it.type === 'banana';
+        const isWeapon = it.type === 'sword' || it.type === 'glove' || it.type === 'bat' || it.type === 'banana' || it.type === 'grenade';
         if (it.type === 'boots' && hasBoots) {
           swapDrop('boots', 0.8);
           hasBoots = false; bootsDurability = 0; playerBoots.visible = false; hasDoubleJumped = false;
         }
-        if (isWeapon && hasSword)  { swapDrop('sword',  1.2); hasSword  = false; swordDurability  = 0; playerSword.visible  = false; }
-        if (isWeapon && hasGlove)  { swapDrop('glove',  1.2); hasGlove  = false; gloveDurability  = 0; playerGlove.visible  = false; }
-        if (isWeapon && hasBat)    { swapDrop('bat',    1.2); hasBat    = false; batDurability    = 0; playerBat.visible    = false; }
-        if (isWeapon && hasBanana) { swapDrop('banana', 1.0); hasBanana = false; bananaDurability = 0; playerBanana.visible = false; }
+        if (isWeapon && hasSword)            { swapDrop('sword',   1.2); hasSword  = false; swordDurability  = 0; playerSword.visible  = false; }
+        if (isWeapon && hasGlove)            { swapDrop('glove',   1.2); hasGlove  = false; gloveDurability  = 0; playerGlove.visible  = false; }
+        if (isWeapon && hasBat)              { swapDrop('bat',     1.2); hasBat    = false; batDurability    = 0; playerBat.visible    = false; }
+        if (isWeapon && hasBanana)           { swapDrop('banana',  1.0); hasBanana = false; bananaDurability = 0; playerBanana.visible = false; }
+        if (isWeapon && hasBlackHoleGrenade) { swapDrop('grenade', 1.2); hasBlackHoleGrenade = false; playerGrenade.visible = false; }
         if (it.type === 'shield' && hasShield) {
           swapDrop('shield', 0.6);
           hasShield = false; shieldDurability = 0; playerShield.visible = false;
