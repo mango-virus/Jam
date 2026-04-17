@@ -1424,6 +1424,8 @@ async function setupMultiplayer() {
       if (homeRun) {
         velY = kb;
         window.SFX?.batHomeRun();
+        // Show "Home Run!" death screen immediately — don't wait for the fall
+        die({ homeRun: true });
       } else if (ghostPunch) {
         window.SFX?.ghostPunch();
         velY = Math.max(velY, GHOST_KNOCKBACK_UP);
@@ -1675,9 +1677,10 @@ let velY        = 0;
 let velX        = 0;   // horizontal knockback
 let velZ        = 0;
 let onGround    = true;
-let hasFallenOff = false; // true once player drops below platform surface — no landing allowed
-let isDead      = false;
-let deathTimer  = 0;
+let hasFallenOff  = false; // true once player drops below platform surface — no landing allowed
+let isDead        = false;
+let deathTimer    = 0;
+let homeRunDeath  = false; // true when death was caused by a home-run bat hit
 let punchTimer  = 0; // >0 while punch animation playing
 let sendPunch   = null;
 
@@ -1708,7 +1711,9 @@ const readyListEl = document.getElementById('ready-list');
 const btnReady   = document.getElementById('btn-ready');
 const btnStart   = document.getElementById('btn-start');
 
-const deathEl = document.getElementById('death-msg');
+const deathEl      = document.getElementById('death-msg');
+const deathMsgSpan = deathEl?.querySelector('span');
+const deathMsgSub  = deathEl?.querySelector('small');
 
 function onPlatform(x, z) {
   return Math.abs(x) < PLATFORM_HALF && Math.abs(z) < PLATFORM_HALF;
@@ -1833,12 +1838,14 @@ function reviveAsGhost() {
   updateLivesHUD();
 }
 
-function die() {
+function die(opts = {}) {
   if (isDead || isGhost) return;
   isDead = true;
-  deathTimer = 2.0;
+  homeRunDeath = !!opts.homeRun;
+  deathTimer = homeRunDeath ? 4.0 : 2.0;
   window.SFX?.die();
-  velY = 0;
+  velY = 0; velX = 0; velZ = 0;
+  hasFallenOff = true; // prevent physics re-landing
   if (gameState === 'playing') {
     // Notify ghost who killed us so they can revive
     if (lastHitByWasGhost && lastHitBy) {
@@ -1856,7 +1863,11 @@ function die() {
     }
     updateLivesHUD();
   }
-  if (deathEl) deathEl.style.display = 'flex';
+  if (deathEl) {
+    if (deathMsgSpan) deathMsgSpan.textContent = homeRunDeath ? '⚾ HOME RUN!' : 'YOU FELL';
+    if (deathMsgSub)  deathMsgSub.textContent  = 'respawning…';
+    deathEl.style.display = 'flex';
+  }
 }
 
 function randomSafeTile() {
@@ -1869,6 +1880,7 @@ function randomSafeTile() {
 function respawn() {
   isDead = false;
   hasFallenOff = false;
+  homeRunDeath = false;
   window.SFX?.respawn();
   if (gameState === 'playing' && localLives <= 0) {
     enterGhostMode();
@@ -1974,8 +1986,9 @@ function startGame(seed, broadcast) {
   gameState  = 'playing';
   isHost     = !!broadcast; // the player who starts the game owns item spawning
   localLives = 3 + (hasArmor ? 1 : 0);
-  isGhost    = false;
-  isDead     = false;
+  isGhost      = false;
+  isDead       = false;
+  homeRunDeath = false;
   ghostPunchCooldown = 0;
   lastHitBy  = null;
   window.GameMusic?.stop();
