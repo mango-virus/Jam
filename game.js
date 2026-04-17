@@ -2122,6 +2122,8 @@ let goblinJumpTargetX = 0;
 let goblinJumpTargetZ = 0;
 let goblinY           = 0;   // world Y, managed separately from group.position.y
 let goblinEventElapsed = 0;
+let goblinSteerTimer  = 0;   // seconds remaining on steer-around override
+let goblinSteerAngle  = 0;   // angle (radians) to travel during steer override
 
 const GHOST_KNOCKBACK_H  = 55;
 const GHOST_KNOCKBACK_UP = 16;
@@ -2758,6 +2760,8 @@ function beginEvent() {
     goblinZ            = goblinSchedule.startZ;
     goblinAngle        = 0;
     goblinBobPhase     = 0;
+    goblinSteerTimer   = 0;
+    goblinSteerAngle   = 0;
     spawnGoblin();
   } else if (eventType === 'rain_bananas') {
     eventTimer       = RAIN_BANANAS_DURATION;
@@ -3367,6 +3371,13 @@ function updateGoblinEvent(dt) {
             goblinJumpTargetZ = targetZ;
             goblinSubState    = 'jumping';
             goblinVelY        = 5.0;
+          } else if (goblinSteerTimer > 0) {
+            // Steering around an obstacle — use override angle instead of target direction
+            goblinSteerTimer -= dt;
+            const snx = Math.sin(goblinSteerAngle), snz = Math.cos(goblinSteerAngle);
+            goblinX += snx * GOBLIN_SPEED * dt;
+            goblinZ += snz * GOBLIN_SPEED * dt;
+            goblinAngle = goblinSteerAngle;
           } else {
             goblinX += nx * GOBLIN_SPEED * dt;
             goblinZ += nz * GOBLIN_SPEED * dt;
@@ -3414,11 +3425,19 @@ function updateGoblinEvent(dt) {
     const GOBLIN_R = 0.45;
     const COMBINED = GOBLIN_R + 0.32; // goblin + player radius
 
+    // Accumulated surface normal from any structure hits this frame
+    let structNX = 0, structNZ = 0, hadStructHit = false;
+
     // Pillars — solid circle push-out
     for (const p of pillarData) {
       if (goblinY >= p.topY) continue;
       const ov = circleOverlap(goblinX, goblinZ, p.x, p.z, p.r + GOBLIN_R);
-      if (ov) { goblinX += ov.nx; goblinZ += ov.nz; }
+      if (ov) {
+        goblinX += ov.nx; goblinZ += ov.nz;
+        const len = Math.hypot(ov.nx, ov.nz);
+        if (len > 0.0001) { structNX += ov.nx / len; structNZ += ov.nz / len; }
+        hadStructHit = true;
+      }
     }
 
     // Elevated platforms — OBB closest-point push-out
@@ -3442,6 +3461,27 @@ function updateGoblinEvent(dt) {
       if (d2 > 0.0001 && d2 < GOBLIN_R * GOBLIN_R) {
         const d = Math.sqrt(d2), s = (GOBLIN_R - d) / d;
         goblinX += ddx * s; goblinZ += ddz * s;
+        structNX += ddx / d; structNZ += ddz / d;
+        hadStructHit = true;
+      }
+    }
+
+    // ── If goblin hit a structure while dropping, steer it around the obstacle ──
+    if (hadStructHit && goblinSubState === 'dropping' && goblinSteerTimer <= 0) {
+      const nLen = Math.hypot(structNX, structNZ);
+      if (nLen > 0.0001) {
+        const nnx = structNX / nLen, nnz = structNZ / nLen;
+        // Two tangent directions perpendicular to the push normal
+        const tx1 = -nnz, tz1 =  nnx;
+        const tx2 =  nnz, tz2 = -nnx;
+        // Pick the tangent that makes the most progress toward the current target
+        const drop = goblinSchedule.drops[Math.min(goblinDropIdx, goblinSchedule.drops.length - 1)];
+        const tdx = drop.x - goblinX, tdz = drop.z - goblinZ;
+        const dotA = tx1 * tdx + tz1 * tdz;
+        const dotB = tx2 * tdx + tz2 * tdz;
+        const [tx, tz] = dotA >= dotB ? [tx1, tz1] : [tx2, tz2];
+        goblinSteerAngle = Math.atan2(tx, tz);
+        goblinSteerTimer = 0.55; // steer around for a bit before re-seeking target
       }
     }
 
