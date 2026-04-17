@@ -221,7 +221,7 @@ body > canvas {
   position: fixed;
   top: 1rem;
   right: 1rem;
-  z-index: 10;
+  z-index: 40;
   padding: 0.45rem 1.1rem;
   border-radius: 8px;
   border: 1px solid var(--accent3);
