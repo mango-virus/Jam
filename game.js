@@ -1675,7 +1675,8 @@ const { group: playerGroup, normalBody: playerNormalBody, ghostBody: playerGhost
         grenadeGroup: playerGrenade,
         shieldEquip: playerShield, shieldEmblem: playerShieldEmblem,
         armorGroup: playerArmorGroup, bootsGroup: playerBoots } = makeCharacter('#' + incoming.color);
-scene.add(playerGroup);
+// playerGroup is NOT added to the scene here — it's hidden during lobby
+// and only added in startGame when the player actually enters a match.
 
 
 // ------------------------------------------------------------------
@@ -2337,7 +2338,7 @@ function addPeer(id, data) {
   char.group.add(nameLabel);
   char.group.position.set(data.x ?? 0, 0, data.z ?? 0);
   char.group.rotation.y = data.rotY ?? 0;
-  char.group.visible = !data.spectating;
+  char.group.visible = !!data.inMatch && !data.spectating;
   scene.add(char.group);
   peers.set(id, { ...char, tx: data.x ?? 0, ty: data.y ?? 0, tz: data.z ?? 0, rotY: data.rotY ?? 0, moving: false, swing: 0, punchTimer: 0, blocking: false, username: data.username, redrawLabel, pSword: !!data.sword, pGlove: !!data.glove, pBat: !!data.bat, pBoots: !!data.boots, pShield: !!data.shield, pBanana: !!data.banana, pColor: data.color || 'ffffff', lives: data.lives ?? 3, isGhost: !!data.isGhost, hasArmor: !!data.hasArmor, ready: !!data.ready, pBubble: !!data.bubble, bubbleMesh: null, inMatch: !!data.inMatch, spectating: !!data.spectating });
   updateMenuReadyList();
@@ -2459,6 +2460,7 @@ async function setupMultiplayer() {
     sendGameEvent = sGame;
     onGame((data, fromPeerId) => {
       if (data.type === 'start') {
+        if (!localReady && !isSpectating) return; // not ready — stay in lobby
         startGame(data.seed, false);
       } else if (data.type === 'ghost_kill') {
         // Someone's ghost knocked us off and wants us revived
@@ -2568,10 +2570,9 @@ async function setupMultiplayer() {
           }
         }
         if (data.inMatch !== undefined) peer.inMatch = !!data.inMatch;
-        if (data.spectating !== undefined) {
-          peer.spectating = !!data.spectating;
-          peer.group.visible = !data.spectating;
-        }
+        if (data.spectating !== undefined) peer.spectating = !!data.spectating;
+        // Character is visible only while actively in a match and not spectating
+        peer.group.visible = !!peer.inMatch && !peer.spectating;
         if (gameState === 'lobby') { updateMenuReadyList(); updateMenuSpectateBtn(); }
         if (gameState === 'playing') updatePeerLivesHUD();
         // If spectating and our target left the match, auto-switch
@@ -3279,8 +3280,8 @@ function returnToLobby() {
   if (isSpectating) {
     isSpectating   = false;
     spectateTarget = null;
-    scene.add(playerGroup); // re-add if it was removed during spectating
   }
+  scene.remove(playerGroup); // always hidden in lobby — added back in startGame
   if (spectatorHudEl) spectatorHudEl.style.display = 'none';
   // Restore player appearance
   exitGhostMode();
@@ -3408,7 +3409,8 @@ function startGame(seed, broadcast) {
   // Hide main platform mesh so tiles take over visually
   platform.visible = false;
   if (!isSpectating) {
-    // Spawn player on center pillar
+    // Bring player into the scene and spawn on the arena
+    scene.add(playerGroup);
     playerGroup.position.set(SPAWN_X, SPAWN_Y, SPAWN_Z);
     velY = 0; velX = 0; velZ = 0; windVelX = 0; windVelZ = 0;
     onGround = false;
@@ -5633,7 +5635,7 @@ function enterSpectatorMode() {
 function exitSpectatorMode() {
   isSpectating   = false;
   spectateTarget = null;
-  scene.add(playerGroup);      // restore character to scene
+  // playerGroup stays out of scene — returnToLobby (called next) handles cleanup
   broadcastSelf();              // immediately tell peers spectating: false
   spectatorHudEl && (spectatorHudEl.style.display = 'none');
   document.exitPointerLock();
