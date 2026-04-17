@@ -303,6 +303,112 @@
     });
   }
 
+  // ── SWORD SWING MISS — sharp metallic swoosh ────────────────────
+  function swordSwing() {
+    ensureCtx(); resume();
+    const t = ctx.currentTime;
+    // High-pitched whoosh
+    const src = ctx.createBufferSource();
+    src.buffer = noise(0.12);
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass'; hp.frequency.value = 3500;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.frequency.value = 5500; bp.Q.value = 1.2;
+    const g = ctx.createGain();
+    src.connect(hp); hp.connect(bp); bp.connect(g); g.connect(master);
+    env(g, t, 0.003, 0.015, 0.09, 0.38);
+    src.start(t); src.stop(t + 0.13);
+    // Short metallic ring tail
+    const o = ctx.createOscillator();
+    const g2 = ctx.createGain();
+    o.type = 'sine'; o.frequency.setValueAtTime(1800, t + 0.02);
+    o.frequency.exponentialRampToValueAtTime(900, t + 0.14);
+    o.connect(g2); g2.connect(master);
+    env(g2, t + 0.02, 0.001, 0.005, 0.1, 0.12);
+    o.start(t + 0.02); o.stop(t + 0.16);
+  }
+
+  // ── GLOVE SWING MISS — heavy air whomp ──────────────────────────
+  function gloveSwing() {
+    ensureCtx(); resume();
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = noise(0.14);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 700;
+    const g = ctx.createGain();
+    src.connect(lp); lp.connect(g); g.connect(master);
+    env(g, t, 0.004, 0.02, 0.1, 0.45);
+    src.start(t); src.stop(t + 0.16);
+    // Low thud with no impact
+    const o = ctx.createOscillator();
+    const g2 = ctx.createGain();
+    o.type = 'sine'; o.frequency.setValueAtTime(140, t);
+    o.frequency.exponentialRampToValueAtTime(55, t + 0.12);
+    o.connect(g2); g2.connect(master);
+    env(g2, t, 0.003, 0.01, 0.1, 0.55);
+    o.start(t); o.stop(t + 0.16);
+  }
+
+  // ── BAT SWING MISS — wooden swoosh ──────────────────────────────
+  function batSwing() {
+    ensureCtx(); resume();
+    const t = ctx.currentTime;
+    // Mid-heavy swoosh
+    const src = ctx.createBufferSource();
+    src.buffer = noise(0.15);
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.frequency.value = 1400; bp.Q.value = 0.9;
+    const g = ctx.createGain();
+    src.connect(bp); bp.connect(g); g.connect(master);
+    env(g, t, 0.004, 0.025, 0.1, 0.42);
+    src.start(t); src.stop(t + 0.16);
+    // Soft hollow resonance of the bat
+    const o = ctx.createOscillator();
+    const g2 = ctx.createGain();
+    o.type = 'triangle'; o.frequency.setValueAtTime(320, t);
+    o.frequency.exponentialRampToValueAtTime(160, t + 0.14);
+    o.connect(g2); g2.connect(master);
+    env(g2, t, 0.002, 0.01, 0.11, 0.2);
+    o.start(t); o.stop(t + 0.16);
+  }
+
+  // ── ROCKET BOOST — jet burst double jump ────────────────────────
+  function rocketBoost() {
+    ensureCtx(); resume();
+    const t = ctx.currentTime;
+    // Noise burst — rushing exhaust
+    const src = ctx.createBufferSource();
+    src.buffer = noise(0.22);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 2200;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass'; hp.frequency.value = 180;
+    const g = ctx.createGain();
+    src.connect(lp); lp.connect(hp); hp.connect(g); g.connect(master);
+    env(g, t, 0.005, 0.04, 0.16, 0.7);
+    src.start(t); src.stop(t + 0.25);
+    // Rising pitch roar
+    const o = ctx.createOscillator();
+    const g2 = ctx.createGain();
+    o.type = 'sawtooth'; o.frequency.setValueAtTime(80, t);
+    o.frequency.exponentialRampToValueAtTime(340, t + 0.18);
+    const lp2 = ctx.createBiquadFilter();
+    lp2.type = 'lowpass'; lp2.frequency.value = 800;
+    o.connect(lp2); lp2.connect(g2); g2.connect(master);
+    env(g2, t, 0.005, 0.03, 0.14, 0.55);
+    o.start(t); o.stop(t + 0.22);
+    // Short high fizz (ignition spark)
+    const src2 = ctx.createBufferSource();
+    src2.buffer = noise(0.06);
+    const hp2 = ctx.createBiquadFilter();
+    hp2.type = 'highpass'; hp2.frequency.value = 5000;
+    const g3 = ctx.createGain();
+    src2.connect(hp2); hp2.connect(g3); g3.connect(master);
+    env(g3, t, 0.001, 0.005, 0.05, 0.3);
+    src2.start(t); src2.stop(t + 0.07);
+  }
+
   // ── GHOST PUNCH — eerie whoosh ───────────────────────────────────
   function ghostPunch() {
     ensureCtx(); resume();
@@ -330,5 +436,5 @@
     src.start(t); src.stop(t + 0.28);
   }
 
-  window.SFX = { punch, swordHit, gloveHit, batNormal, batHomeRun, shieldBlock, shieldBreak, itemBreak, pickup, die, respawn, ghostPunch };
+  window.SFX = { punch, swordHit, gloveHit, batNormal, batHomeRun, shieldBlock, shieldBreak, itemBreak, pickup, die, respawn, ghostPunch, swordSwing, gloveSwing, batSwing, rocketBoost };
 })();

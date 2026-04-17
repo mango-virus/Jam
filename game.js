@@ -1605,6 +1605,7 @@ document.addEventListener('keydown', e => {
         // Second jump — only this one costs a charge
         velY = JUMP_FORCE * 2.0;
         hasDoubleJumped = true;
+        window.SFX?.rocketBoost();
         bootsDurability--;
         if (bootsDurability <= 0) breakBoots(); else updateDurabilityHUD();
       }
@@ -2049,8 +2050,6 @@ function doPunch() {
   if (punchTimer > 0 || isDead) return;
   punchTimer = 0.35;
   broadcastSelf();
-  // Swing sound plays immediately regardless of hit/miss
-  if (!hasSword && !hasGlove && !hasBat) window.SFX?.punch();
 
   const px = playerGroup.position.x;
   const py = playerGroup.position.y;
@@ -2075,7 +2074,7 @@ function doPunch() {
       force = homeRun ? BAT_HOME_RUN_KNOCKBACK : BAT_NORMAL_KNOCKBACK;
     }
     sendPunch({ kx: dx / dist, kz: dz / dist, force, homeRun }, id);
-    // Play attacker-side sound
+    // Play attacker-side HIT sound
     if (homeRun)           window.SFX?.batHomeRun();
     else if (hasBat)       window.SFX?.batNormal();
     else if (hasSword)     window.SFX?.swordHit();
@@ -2096,6 +2095,12 @@ function doPunch() {
       batDurability--;
       if (batDurability <= 0) breakBat(); else updateDurabilityHUD();
     }
+  } else {
+    // Missed — play weapon swing / whoosh sound
+    if (hasSword)      window.SFX?.swordSwing();
+    else if (hasGlove) window.SFX?.gloveSwing();
+    else if (hasBat)   window.SFX?.batSwing();
+    else               window.SFX?.punch(); // bare fist whoosh
   }
 }
 const CAM_DIST   = 5;
