@@ -2460,6 +2460,8 @@ async function setupMultiplayer() {
     sendGameEvent = sGame;
     onGame((data, fromPeerId) => {
       if (data.type === 'start') {
+        lastMatchSeed          = data.seed;
+        lastMatchStartWallTime = Date.now();
         if (!localReady && !isSpectating) return; // not ready — stay in lobby
         startGame(data.seed, false);
       } else if (data.type === 'ghost_kill') {
@@ -2823,6 +2825,10 @@ let tileOrder          = [];        // shuffled tile indices
 let tileDropIndex      = 0;         // next tile to warn
 let nextTileTime       = 0;         // game-time when next tile event fires
 let gameOverTimer      = 0;
+
+// Last match seed received — stored even when not ready so spectators can reconstruct the arena
+let lastMatchSeed          = 0;
+let lastMatchStartWallTime = 0;  // Date.now() when the start event arrived
 
 // --- Random event system (fully deterministic — driven by game seed, no P2P needed) ---
 let _gameSeed        = 0;           // shared game seed, same on every client
@@ -3905,9 +3911,9 @@ function spawnGumball(colorIdx) {
   // Find the nearest non-dead, non-ghost target (local player + peers), track Y too
   let tx = playerGroup.position.x, tz = playerGroup.position.z;
   let ty = playerGroup.position.y + 0.85; // body centre
-  let bestDist = (isDead || isGhost) ? Infinity : Math.hypot(tx - mx, tz - mz);
+  let bestDist = (isDead || isGhost || isSpectating) ? Infinity : Math.hypot(tx - mx, tz - mz);
   for (const peer of peers.values()) {
-    if (peer.isGhost) continue;
+    if (peer.isGhost || peer.spectating) continue;
     const d = Math.hypot(peer.group.position.x - mx, peer.group.position.z - mz);
     if (d < bestDist) {
       bestDist = d;
@@ -5592,7 +5598,7 @@ function loop(now) {
 
 // Returns true if any connected peer is currently in a match
 function anyPeerInMatch() {
-  return [...peers.values()].some(p => p.inMatch);
+  return [...peers.values()].some(p => p.inMatch && !p.spectating);
 }
 
 // Show/hide spectate button and lock/unlock start button based on match state
@@ -5627,7 +5633,14 @@ function enterSpectatorMode() {
   spectateYaw    = 0;
   scene.remove(playerGroup);   // remove from scene so nobody sees it
   broadcastSelf();              // immediately tell peers spectating: true
-  if (menuEl) menuEl.classList.remove('active');
+  if (anyPeerInMatch() && lastMatchSeed) {
+    // Reconstruct the arena so the spectator can see tiles, structures, and events
+    startGame(lastMatchSeed, false);
+    // Advance gameTime to roughly match where the live match is right now
+    gameTime = Math.max(0, (Date.now() - lastMatchStartWallTime) / 1000);
+  } else {
+    if (menuEl) menuEl.classList.remove('active');
+  }
   updateSpectatorHUD();
   renderer.domElement.requestPointerLock();
 }
