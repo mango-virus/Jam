@@ -2222,8 +2222,34 @@ function reviveAsGhost() {
   updateLivesHUD();
 }
 
+function dropItemsOnDeath() {
+  if (!hasSword && !hasGlove && !hasBat && !hasBoots && !hasShield && !hasBanana) return;
+  // Drop at the nearest solid tile to where the player fell from
+  const px = playerGroup.position.x, pz = playerGroup.position.z;
+  const tile = findNearestSolidTile(px, pz);
+  if (!tile) return; // no platform left — items vanish with the player
+  let slot = 0;
+  function spawnDrop(type) {
+    // Spread multiple items around the tile so they don't stack
+    const angle = (slot / 6) * Math.PI * 2;
+    const r = slot === 0 ? 0 : 0.55;
+    slot++;
+    const it = makeGroundItem(type, tile.cx + Math.sin(angle) * r, tile.cz + Math.cos(angle) * r);
+    groundItems.push(it);
+    sendItemEvent?.({ act: 'drop', id: it.id, type: it.type, x: it.x, z: it.z });
+  }
+  if (hasSword)  { spawnDrop('sword');  hasSword  = false; swordDurability  = 0; playerSword.visible  = false; }
+  if (hasGlove)  { spawnDrop('glove');  hasGlove  = false; gloveDurability  = 0; playerGlove.visible  = false; }
+  if (hasBat)    { spawnDrop('bat');    hasBat    = false; batDurability    = 0; playerBat.visible    = false; }
+  if (hasBoots)  { spawnDrop('boots');  hasBoots  = false; bootsDurability  = 0; playerBoots.visible  = false; hasDoubleJumped = false; }
+  if (hasShield) { spawnDrop('shield'); hasShield = false; shieldDurability = 0; playerShield.visible = false; }
+  if (hasBanana) { spawnDrop('banana'); hasBanana = false; bananaDurability = 0; playerBanana.visible = false; }
+  updateDurabilityHUD();
+}
+
 function die(opts = {}) {
   if (isDead || isGhost) return;
+  dropItemsOnDeath();
   isDead = true;
   homeRunDeath = !!opts.homeRun;
   deathTimer = homeRunDeath ? 4.0 : 2.0;
