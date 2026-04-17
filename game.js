@@ -170,8 +170,11 @@ function rebuildArena(seed) {
   }
 
   function addPillarCol(x, z, r, topY) { pillarData.push({ x, z, r, topY }); }
-  function addEP(x, z, hw, hd, topY) {
-    elevatedPlatforms.push({ x, z, hw, hd, topY });
+  // angle (optional) stores the Y-rotation of the shape so OBB tests
+  // can work in the shape's local frame instead of an inflated AABB.
+  // hw/hd are LOCAL half-extents (before rotation).
+  function addEP(x, z, hw, hd, topY, angle = 0) {
+    elevatedPlatforms.push({ x, z, hw, hd, topY, angle });
   }
 
   // ── Structure builders ────────────────────────────────────────────
@@ -248,11 +251,9 @@ function rebuildArena(seed) {
     const len = 6 + rand() * 7, h = 0.7 + rand() * 0.8, thick = 0.9;
     const angle = rand() * Math.PI;
     addMesh(new THREE.BoxGeometry(len, h, thick), mat(hue, 0.18), x, h/2, z, angle);
-    // Project rotated box extents onto world axes for correct AABB collision
-    const ca = Math.abs(Math.cos(angle)), sa = Math.abs(Math.sin(angle));
-    const hw = len/2 * ca + thick/2 * sa;
-    const hd = len/2 * sa + thick/2 * ca;
-    addEP(x, z, hw, hd, h);
+    // Store local OBB extents + angle so tests work against the
+    // actual rotated box, not an over-inflated world AABB.
+    addEP(x, z, len/2, thick/2, h, angle);
     occupied.push({ x, z, r: len/2 });
   }
 
@@ -336,13 +337,10 @@ function rebuildArena(seed) {
     m.castShadow = true; m.receiveShadow = true;
     scene.add(m); pillarMeshes.push(m);
 
-    // Collision: AABB that accounts for the Y rotation of the column axis.
-    // After rotation, the column axis direction in world XZ is (cos angle, -sin angle).
-    // AABB half-extents = projection of column onto world axes.
-    const ca = Math.abs(Math.cos(angle)), sa = Math.abs(Math.sin(angle));
-    const hw = ph / 2 * ca + r * sa;
-    const hd = ph / 2 * sa + r * ca;
-    addEP(x, z, hw, hd, pw); // topY = pw (full diameter = highest walkable point)
+    // Store local OBB extents + angle: ph/2 along the column axis,
+    // r perpendicular. OBB test will rotate the query point into local
+    // frame so the hitbox matches the actual column, not an inflated AABB.
+    addEP(x, z, ph/2, r, pw, angle); // topY = pw (diameter = highest walkable point)
 
     occupied.push({ x, z, r: ph / 2 });
   }
@@ -1564,14 +1562,28 @@ function onPlatform(x, z) {
   return Math.abs(x) < PLATFORM_HALF && Math.abs(z) < PLATFORM_HALF;
 }
 
+// Returns true if world point (x,z) is inside elevated platform ep.
+// Uses OBB test when ep.angle != 0 so rotated shapes (low wall, toppled
+// column) don't have oversized hit-areas in the empty space around them.
+function epContains(ep, x, z) {
+  const dx = x - ep.x, dz = z - ep.z;
+  if (ep.angle === 0) {
+    return Math.abs(dx) <= ep.hw && Math.abs(dz) <= ep.hd;
+  }
+  const ca = Math.cos(ep.angle), sa = Math.sin(ep.angle);
+  const lx =  dx * ca + dz * sa;
+  const lz = -dx * sa + dz * ca;
+  return Math.abs(lx) <= ep.hw && Math.abs(lz) <= ep.hd;
+}
+
 // Returns the highest surface Y under (x, z), or null if nothing below.
 function getSurfaceBelow(x, z) {
   let best = null;
   // Main platform (only if tile hasn't fallen)
   if (onPlatform(x, z) && !isTileUnstable(x, z)) best = 0;
-  // Elevated platforms (AABB)
+  // Elevated platforms — OBB test
   for (const ep of elevatedPlatforms) {
-    if (x >= ep.x - ep.hw && x <= ep.x + ep.hw && z >= ep.z - ep.hd && z <= ep.z + ep.hd) {
+    if (epContains(ep, x, z)) {
       if (best === null || ep.topY > best) best = ep.topY;
     }
   }
@@ -2043,13 +2055,30 @@ function loop(now) {
     }
   }
 
-  // vs elevated platforms — climb if top within reach, otherwise push out
+  // vs elevated platforms — climb if top within reach, otherwise push out.
+  // Uses OBB closest-point so rotated shapes (low wall, toppled column)
+  // only collide against their actual footprint, not an inflated AABB.
   for (const ep of elevatedPlatforms) {
     const px = playerGroup.position.x, pz = playerGroup.position.z, py = playerGroup.position.y;
     if (py >= ep.topY) continue; // above the platform — no side collision
-    // Closest point on AABB to player XZ
-    const cx = Math.max(ep.x - ep.hw, Math.min(ep.x + ep.hw, px));
-    const cz = Math.max(ep.z - ep.hd, Math.min(ep.z + ep.hd, pz));
+
+    // Closest point on OBB to player XZ
+    let cx, cz;
+    if (ep.angle === 0) {
+      // Fast path for axis-aligned boxes
+      cx = Math.max(ep.x - ep.hw, Math.min(ep.x + ep.hw, px));
+      cz = Math.max(ep.z - ep.hd, Math.min(ep.z + ep.hd, pz));
+    } else {
+      // Rotate player into box-local frame, clamp, rotate back
+      const ca = Math.cos(ep.angle), sa = Math.sin(ep.angle);
+      const localX = (px - ep.x) * ca + (pz - ep.z) * sa;
+      const localZ = -(px - ep.x) * sa + (pz - ep.z) * ca;
+      const clampX = Math.max(-ep.hw, Math.min(ep.hw, localX));
+      const clampZ = Math.max(-ep.hd, Math.min(ep.hd, localZ));
+      cx = ep.x + clampX * ca - clampZ * sa;
+      cz = ep.z + clampX * sa + clampZ * ca;
+    }
+
     const dx = px - cx, dz = pz - cz;
     const dist2 = dx * dx + dz * dz;
     if (dist2 >= PLAYER_R * PLAYER_R) continue;
@@ -2071,11 +2100,19 @@ function loop(now) {
         playerGroup.position.x += dx * s;
         playerGroup.position.z += dz * s;
       } else {
-        // Player center inside box — push on shortest axis
-        const overX = ep.hw + PLAYER_R - Math.abs(px - ep.x);
-        const overZ = ep.hd + PLAYER_R - Math.abs(pz - ep.z);
-        if (overX < overZ) playerGroup.position.x += Math.sign(px - ep.x) * overX;
-        else               playerGroup.position.z += Math.sign(pz - ep.z) * overZ;
+        // Player center inside box — push on shortest axis (local frame)
+        const ca2 = Math.cos(ep.angle), sa2 = Math.sin(ep.angle);
+        const lx2 = (px - ep.x) * ca2 + (pz - ep.z) * sa2;
+        const lz2 = -(px - ep.x) * sa2 + (pz - ep.z) * ca2;
+        const overX = ep.hw + PLAYER_R - Math.abs(lx2);
+        const overZ = ep.hd + PLAYER_R - Math.abs(lz2);
+        if (overX < overZ) {
+          playerGroup.position.x += Math.sign(lx2) * overX * ca2;
+          playerGroup.position.z += Math.sign(lx2) * overX * sa2;
+        } else {
+          playerGroup.position.x -= Math.sign(lz2) * overZ * sa2;
+          playerGroup.position.z += Math.sign(lz2) * overZ * ca2;
+        }
       }
     }
   }
