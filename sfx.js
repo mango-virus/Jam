@@ -482,5 +482,58 @@
     src.start(t + 0.1); src.stop(t + 0.28);
   }
 
-  window.SFX = { punch, swordHit, gloveHit, batNormal, batHomeRun, shieldBlock, shieldBreak, itemBreak, pickup, die, respawn, ghostPunch, swordSwing, gloveSwing, batSwing, rocketBoost, bananaPlace, bananaSlip };
+  // ── WIND GUST — three-layer howling wind ─────────────────────────
+  function windGust() {
+    ensureCtx(); resume();
+    const t   = ctx.currentTime;
+    const dur = 4.5;
+    // Layer 1: broad mid-frequency wind body
+    const src1 = ctx.createBufferSource(); src1.buffer = noise(dur);
+    const bp1  = ctx.createBiquadFilter(); bp1.type = 'bandpass'; bp1.frequency.value = 260; bp1.Q.value = 0.9;
+    const lp1  = ctx.createBiquadFilter(); lp1.type = 'lowpass';  lp1.frequency.value = 680;
+    const g1   = ctx.createGain();
+    src1.connect(bp1); bp1.connect(lp1); lp1.connect(g1); g1.connect(master);
+    g1.gain.setValueAtTime(0, t);
+    g1.gain.linearRampToValueAtTime(0.52, t + 0.45);
+    g1.gain.setValueAtTime(0.52, t + dur - 0.7);
+    g1.gain.linearRampToValueAtTime(0, t + dur);
+    src1.start(t); src1.stop(t + dur);
+    // Layer 2: high airy hiss
+    const src2 = ctx.createBufferSource(); src2.buffer = noise(dur);
+    const hp2  = ctx.createBiquadFilter(); hp2.type = 'highpass'; hp2.frequency.value = 900;
+    const bp2  = ctx.createBiquadFilter(); bp2.type = 'bandpass'; bp2.frequency.value = 1600; bp2.Q.value = 1.4;
+    const g2   = ctx.createGain();
+    src2.connect(hp2); hp2.connect(bp2); bp2.connect(g2); g2.connect(master);
+    g2.gain.setValueAtTime(0, t);
+    g2.gain.linearRampToValueAtTime(0.28, t + 0.65);
+    g2.gain.setValueAtTime(0.28, t + dur - 0.9);
+    g2.gain.linearRampToValueAtTime(0, t + dur);
+    src2.start(t); src2.stop(t + dur);
+    // Layer 3: deep sub-bass rumble
+    const src3 = ctx.createBufferSource(); src3.buffer = noise(dur);
+    const lp3  = ctx.createBiquadFilter(); lp3.type = 'lowpass'; lp3.frequency.value = 115;
+    const g3   = ctx.createGain();
+    src3.connect(lp3); lp3.connect(g3); g3.connect(master);
+    g3.gain.setValueAtTime(0, t);
+    g3.gain.linearRampToValueAtTime(0.62, t + 0.3);
+    g3.gain.setValueAtTime(0.62, t + dur - 0.5);
+    g3.gain.linearRampToValueAtTime(0, t + dur);
+    src3.start(t); src3.stop(t + dur);
+    // Layer 4: eerie howl oscillator with vibrato
+    const lfo  = ctx.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 4.2;
+    const lfoG = ctx.createGain(); lfoG.gain.value = 28;
+    const howl = ctx.createOscillator(); howl.type = 'sine'; howl.frequency.value = 185;
+    const lpH  = ctx.createBiquadFilter(); lpH.type = 'lowpass'; lpH.frequency.value = 500;
+    const g4   = ctx.createGain();
+    lfo.connect(lfoG); lfoG.connect(howl.frequency);
+    howl.connect(lpH); lpH.connect(g4); g4.connect(master);
+    g4.gain.setValueAtTime(0, t);
+    g4.gain.linearRampToValueAtTime(0.18, t + 0.9);
+    g4.gain.setValueAtTime(0.18, t + dur - 1.0);
+    g4.gain.linearRampToValueAtTime(0, t + dur);
+    lfo.start(t); lfo.stop(t + dur);
+    howl.start(t); howl.stop(t + dur);
+  }
+
+  window.SFX = { punch, swordHit, gloveHit, batNormal, batHomeRun, shieldBlock, shieldBreak, itemBreak, pickup, die, respawn, ghostPunch, swordSwing, gloveSwing, batSwing, rocketBoost, bananaPlace, bananaSlip, windGust };
 })();

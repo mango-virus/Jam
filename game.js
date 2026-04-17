@@ -1935,6 +1935,32 @@ let rainEventElapsed = 0;
 const EVENT_ANNOUNCE_S      = 5;
 const RAIN_BANANAS_DURATION = 25;
 const fallingBananas        = [];   // { group, x, z, velY, peelId, rotVX, rotVZ }
+let eventCount              = 0;    // increments each time an event ends (for cycling)
+const EVENT_TYPES           = ['rain_bananas', 'clouds_alive'];
+
+// --- Cloud event constants ---
+const CLOUD_ORBIT_R      = 32;   // radius of cloud orbit around arena
+const CLOUD_ORBIT_SPEED  = 0.4;  // radians/s
+const CLOUD_HEIGHT       = 10;   // height above platform
+const CLOUD_CIRCLE_TIME  = 5.0;  // base seconds of circling before each gust
+const CLOUD_PREPARE_TIME = 2.2;  // ominous pause before blowing
+const CLOUD_BLOW_TIME    = 3.5;  // seconds of active wind
+const CLOUD_GUSTS        = 3;    // total gusts before dissipation
+const CLOUD_DISSIPATE_S  = 2.5;  // fade-out duration
+const WIND_WIDTH         = 14;   // full width of wind corridor (units)
+const WIND_ACCEL         = 85;   // horizontal acceleration applied to players in corridor (units/s²)
+
+// --- Cloud event state ---
+let cloudGroup          = null;       // THREE.Group | null
+let cloudAngle          = 0;          // current orbit angle (radians)
+let cloudSubState       = 'circling'; // 'circling' | 'preparing' | 'blowing' | 'dissipating'
+let cloudGustCount      = 0;          // how many gusts have fired (0–CLOUD_GUSTS)
+let cloudCircleTimer    = 0;
+let cloudPrepareTimer   = 0;
+let cloudBlowTimer      = 0;
+let cloudDissipateTimer = 0;
+let cloudSchedule       = [];         // pre-generated circle durations for the 3 gusts
+const windStreaks        = [];         // { mesh, mat, velX, velZ, lifetime, maxLifetime }
 
 const GHOST_KNOCKBACK_H  = 55;
 const GHOST_KNOCKBACK_UP = 16;
@@ -2212,8 +2238,11 @@ function returnToLobby() {
   isSlipping = false; slipTimer = 0; bananaImmunityTimer = 0;
   // Clean up random events
   eventState = 'idle'; eventType = null; eventTimer = 0;
+  eventCount = 0;
   for (const fb of fallingBananas) scene.remove(fb.group);
   fallingBananas.length = 0;
+  despawnCloud();
+  clearWindStreaks();
   hideEventAnnouncement();
   // Move player to lobby
   playerGroup.position.set(0, 1, 0);
@@ -2262,6 +2291,9 @@ function startGame(seed, broadcast) {
   rainSchedule = []; rainScheduleIdx = 0; rainEventElapsed = 0;
   for (const fb of fallingBananas) scene.remove(fb.group);
   fallingBananas.length = 0;
+  eventCount = 0;
+  despawnCloud();
+  clearWindStreaks();
   hideEventAnnouncement();
   window.GameMusic?.stop();
   // Clear any leftover items and reset spawn timer
@@ -2381,6 +2413,10 @@ const EVENT_INFO = {
     name: "🍌 It's Raining Bananas!",
     sub:  'Watch out — banana peels are falling from the sky!',
   },
+  clouds_alive: {
+    name: '☁️ The Clouds are alive...',
+    sub:  'Something is watching. Something is breathing.',
+  },
 };
 
 function showEventAnnouncement(type) {
@@ -2407,19 +2443,37 @@ function triggerEvent(type) {
 
 function beginEvent() {
   eventState = 'running';
-  eventTimer = RAIN_BANANAS_DURATION;
-  rainEventElapsed = 0;
-  rainScheduleIdx  = 0;
   hideEventAnnouncement();
-  if (eventType === 'rain_bananas') rainSchedule = generateRainSchedule();
+  if (eventType === 'rain_bananas') {
+    eventTimer       = RAIN_BANANAS_DURATION;
+    rainEventElapsed = 0;
+    rainScheduleIdx  = 0;
+    rainSchedule     = generateRainSchedule();
+  } else if (eventType === 'clouds_alive') {
+    eventTimer = 120; // safety fallback — cloud self-terminates via sub-state machine
+    cloudSchedule  = generateCloudSchedule();
+    cloudGustCount = 0;
+    // Deterministic start angle from seed + eventCount
+    { let s = (_gameSeed ^ (0xc10d0000 + eventCount)) >>> 0;
+      s = (Math.imul(s, 1664525) + 1013904223) | 0;
+      cloudAngle = ((s >>> 0) / 0x100000000) * Math.PI * 2; }
+    cloudSubState    = 'circling';
+    cloudCircleTimer = cloudSchedule[0];
+    spawnCloud();
+  }
 }
 
 function endEvent() {
+  if (eventState !== 'running') return; // guard against double-call
   eventState = 'idle';
   eventType  = null;
+  eventCount++;
+  // Cloud cleanup
+  despawnCloud();
+  clearWindStreaks();
   // Deterministic gap until next event — same result on every client
   const t = Math.round(gameTime);
-  let s = (_gameSeed ^ (t * 0x9e3779b9)) >>> 0;
+  let s = (_gameSeed ^ (t * 0x9e3779b9 + eventCount)) >>> 0;
   s = (Math.imul(s, 1664525) + 1013904223) | 0;
   nextEventTime = gameTime + 30 + ((s >>> 0) / 0x100000000) * 30; // 30–60 s
   hideEventAnnouncement();
@@ -2497,6 +2551,225 @@ function spawnFallingBananaVisual(x, z, peelId) {
   });
 }
 
+// ------------------------------------------------------------------
+// Cloud event helpers
+// ------------------------------------------------------------------
+
+// Returns 3 circle-duration values derived from the shared game seed.
+function generateCloudSchedule() {
+  let s = (_gameSeed ^ (0xc10d0000 + eventCount + 1)) >>> 0;
+  function r() { s = (Math.imul(s, 1664525) + 1013904223) | 0; return (s >>> 0) / 0x100000000; }
+  return [
+    CLOUD_CIRCLE_TIME + r() * 3.5,
+    CLOUD_CIRCLE_TIME + r() * 3.5,
+    CLOUD_CIRCLE_TIME + r() * 3.5,
+  ];
+}
+
+// Build and add the cloud mesh to the scene.
+function spawnCloud() {
+  cloudGroup = new THREE.Group();
+
+  // Body — overlapping puff spheres
+  const cloudMat = new THREE.MeshStandardMaterial({ color: 0xd8d8f0, roughness: 0.95, metalness: 0 });
+  const puffs = [
+    { x:  0.0,  y:  0.0,  z:  0.0,  r: 3.0 },
+    { x: -2.4,  y: -0.3,  z:  0.3,  r: 2.2 },
+    { x:  2.4,  y: -0.3,  z:  0.3,  r: 2.0 },
+    { x: -4.1,  y: -0.8,  z:  0.5,  r: 1.5 },
+    { x:  4.1,  y: -0.8,  z:  0.5,  r: 1.4 },
+    { x: -1.1,  y:  1.6,  z:  0.2,  r: 1.9 },
+    { x:  1.1,  y:  1.7,  z:  0.2,  r: 1.7 },
+    { x:  0.0,  y: -1.9,  z:  0.3,  r: 2.3 },
+    { x:  0.0,  y:  0.5,  z:  0.8,  r: 2.0 }, // back bulge
+  ];
+  for (const p of puffs) {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(p.r, 10, 7), cloudMat);
+    m.position.set(p.x, p.y, p.z);
+    cloudGroup.add(m);
+  }
+
+  // Glowing eyes (face is at local -Z, so eyes are at z < 0)
+  const eyeMat = new THREE.MeshStandardMaterial({
+    color: 0xff1800, emissive: 0xff1800, emissiveIntensity: 2.5,
+  });
+  for (const ex of [-1.1, 1.1]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.38, 8, 6), eyeMat);
+    eye.position.set(ex, 0.45, -2.6);
+    cloudGroup.add(eye);
+    // Inner pupil (darker)
+    const pupil = new THREE.Mesh(
+      new THREE.SphereGeometry(0.18, 6, 5),
+      new THREE.MeshStandardMaterial({ color: 0x110000, emissive: 0x220000, emissiveIntensity: 1 })
+    );
+    pupil.position.set(ex, 0.45, -2.95);
+    cloudGroup.add(pupil);
+  }
+
+  // Jagged mouth — alternating teeth heights
+  const mouthMat = new THREE.MeshStandardMaterial({ color: 0x0a0008 });
+  for (let i = 0; i < 8; i++) {
+    const toothH = i % 2 === 0 ? 0.7 : 0.45;
+    const toothY = i % 2 === 0 ? -0.75 : -0.95;
+    const tooth  = new THREE.Mesh(new THREE.BoxGeometry(0.38, toothH, 0.22), mouthMat);
+    tooth.position.set(-1.75 + i * 0.5, toothY, -2.6);
+    cloudGroup.add(tooth);
+  }
+  // Mouth backing (dark gap)
+  const mouthBg = new THREE.Mesh(
+    new THREE.BoxGeometry(4.2, 0.55, 0.15),
+    new THREE.MeshStandardMaterial({ color: 0x050005 })
+  );
+  mouthBg.position.set(0, -1.1, -2.55);
+  cloudGroup.add(mouthBg);
+
+  // Position and orient cloud, then add to scene
+  cloudGroup.position.set(
+    CLOUD_ORBIT_R * Math.cos(cloudAngle),
+    CLOUD_HEIGHT,
+    CLOUD_ORBIT_R * Math.sin(cloudAngle)
+  );
+  // Face inward: local -Z should point toward arena center
+  cloudGroup.rotation.y = Math.atan2(Math.cos(cloudAngle), Math.sin(cloudAngle));
+  scene.add(cloudGroup);
+}
+
+function despawnCloud() {
+  if (!cloudGroup) return;
+  scene.remove(cloudGroup);
+  cloudGroup = null;
+}
+
+// Spawn a single wind-streak particle in the wind corridor.
+function spawnWindStreak() {
+  if (!cloudGroup) return;
+  const wdx = -Math.cos(cloudAngle);
+  const wdz = -Math.sin(cloudAngle);
+  const perpX = -wdz, perpZ = wdx; // perpendicular to wind direction
+  const cx = cloudGroup.position.x;
+  const cz = cloudGroup.position.z;
+
+  const along  = 2 + Math.random() * 22;
+  const perp   = (Math.random() * 2 - 1) * WIND_WIDTH * 0.44;
+  const height = CLOUD_HEIGHT - 3.5 + Math.random() * 5;
+
+  const mat  = new THREE.MeshBasicMaterial({ color: 0xe8eeff, transparent: true, opacity: 0.0 });
+  const len  = 1.4 + Math.random() * 1.0;
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, len), mat);
+  mesh.position.set(
+    cx + wdx * along + perpX * perp,
+    height,
+    cz + wdz * along + perpZ * perp
+  );
+  // Orient streak long axis along wind direction
+  mesh.rotation.y = Math.atan2(wdx, wdz);
+  scene.add(mesh);
+
+  const life = 0.7 + Math.random() * 0.55;
+  windStreaks.push({ mesh, mat, velX: wdx * 16, velZ: wdz * 16, lifetime: life, maxLifetime: life });
+}
+
+function updateWindStreaks(dt) {
+  // Continuously spawn new streaks while blowing
+  if (cloudSubState === 'blowing' && windStreaks.length < 28) {
+    for (let i = 0; i < 4; i++) spawnWindStreak();
+  }
+  for (let i = windStreaks.length - 1; i >= 0; i--) {
+    const ws = windStreaks[i];
+    ws.lifetime -= dt;
+    ws.mesh.position.x += ws.velX * dt;
+    ws.mesh.position.z += ws.velZ * dt;
+    // Fade in for first 20% of life, then fade out
+    const prog = ws.lifetime / ws.maxLifetime;
+    ws.mat.opacity = prog > 0.8 ? (1 - prog) * 3.5 * 0.72 : prog * 0.72;
+    if (ws.lifetime <= 0) {
+      scene.remove(ws.mesh);
+      windStreaks.splice(i, 1);
+    }
+  }
+}
+
+function clearWindStreaks() {
+  for (const ws of windStreaks) scene.remove(ws.mesh);
+  windStreaks.length = 0;
+}
+
+// Per-frame update for the cloud event sub-state machine.
+function updateCloudEvent(dt) {
+  if (!cloudGroup) return;
+
+  if (cloudSubState === 'circling') {
+    cloudAngle += CLOUD_ORBIT_SPEED * dt;
+    cloudGroup.position.x = CLOUD_ORBIT_R * Math.cos(cloudAngle);
+    cloudGroup.position.z = CLOUD_ORBIT_R * Math.sin(cloudAngle);
+    cloudGroup.rotation.y = Math.atan2(Math.cos(cloudAngle), Math.sin(cloudAngle));
+    cloudCircleTimer -= dt;
+    if (cloudCircleTimer <= 0) {
+      cloudSubState    = 'preparing';
+      cloudPrepareTimer = CLOUD_PREPARE_TIME;
+    }
+
+  } else if (cloudSubState === 'preparing') {
+    // Cloud sits still and watches — eyes pulse
+    cloudPrepareTimer -= dt;
+    const pulse = 1.5 + Math.sin(cloudPrepareTimer * 8) * 1.5;
+    // Update emissive intensity on eye meshes (indices 9 and 11 = eye + pupil pairs)
+    cloudGroup.children.forEach(child => {
+      if (child.material && child.material.emissiveIntensity !== undefined &&
+          child.material.color.r > 0.5) {
+        child.material.emissiveIntensity = pulse;
+      }
+    });
+    if (cloudPrepareTimer <= 0) {
+      cloudSubState  = 'blowing';
+      cloudBlowTimer = CLOUD_BLOW_TIME;
+      window.SFX?.windGust();
+    }
+
+  } else if (cloudSubState === 'blowing') {
+    cloudBlowTimer -= dt;
+    updateWindStreaks(dt);
+
+    // Apply wind force to local player if in the corridor
+    if (!isDead && !isGhost) {
+      const wdx = -Math.cos(cloudAngle);
+      const wdz = -Math.sin(cloudAngle);
+      const cx  = cloudGroup.position.x;
+      const cz  = cloudGroup.position.z;
+      const px  = playerGroup.position.x;
+      const pz  = playerGroup.position.z;
+      const dx  = px - cx;
+      const dz  = pz - cz;
+      const along = dx * wdx + dz * wdz;
+      const perp  = dx * (-wdz) + dz * wdx;
+      if (along > -4 && Math.abs(perp) < WIND_WIDTH * 0.5) {
+        velX += wdx * WIND_ACCEL * dt;
+        velZ += wdz * WIND_ACCEL * dt;
+      }
+    }
+
+    if (cloudBlowTimer <= 0) {
+      clearWindStreaks();
+      cloudGustCount++;
+      if (cloudGustCount < CLOUD_GUSTS) {
+        cloudSubState    = 'circling';
+        cloudCircleTimer = cloudSchedule[cloudGustCount];
+      } else {
+        cloudSubState       = 'dissipating';
+        cloudDissipateTimer = CLOUD_DISSIPATE_S;
+      }
+    }
+
+  } else if (cloudSubState === 'dissipating') {
+    cloudDissipateTimer -= dt;
+    const prog = Math.max(0, cloudDissipateTimer / CLOUD_DISSIPATE_S);
+    cloudGroup.scale.setScalar(prog);
+    if (cloudDissipateTimer <= 0) {
+      endEvent(); // self-terminate the event
+    }
+  }
+}
+
 const CAM_DIST   = 5;
 const CAM_HEIGHT = 2.5;
 
@@ -2557,7 +2830,7 @@ function loop(now) {
 
     // --- Random event system (deterministic — all clients run in sync via shared seed) ---
     if (eventState === 'idle' && gameTime >= nextEventTime) {
-      triggerEvent('rain_bananas');
+      triggerEvent(EVENT_TYPES[eventCount % EVENT_TYPES.length]);
     }
     if (eventState === 'announcing') {
       eventTimer -= dt;
@@ -2573,8 +2846,10 @@ function loop(now) {
           const entry = rainSchedule[rainScheduleIdx++];
           spawnFallingBananaVisual(entry.x, entry.z, entry.peelId);
         }
+      } else if (eventType === 'clouds_alive') {
+        updateCloudEvent(dt);
       }
-      if (eventTimer <= 0) endEvent();
+      if (eventTimer <= 0 && eventState === 'running') endEvent();
     }
     // --- Falling banana physics & landing ---
     for (let i = fallingBananas.length - 1; i >= 0; i--) {
