@@ -2027,11 +2027,11 @@ let eventCount              = 0;    // increments each time an event ends (for c
 const EVENT_TYPES           = ['loot_goblin', 'clouds_alive', 'rain_bananas', 'lava_floor'];
 
 // --- Lava Floor event constants ---
-const LAVA_RISE_TIME     = 8.0;   // seconds lava takes to reach tile surface
-const LAVA_HOLD_TIME     = 5.0;   // seconds lava stays at peak before event ends
-const LAVA_START_Y       = -5.0;  // Y where lava begins (below tiles)
-const LAVA_PEAK_Y        = 0.22;  // Y at full rise (just above tile tops ~0.025)
-const LAVA_KILL_PROGRESS = 0.88;  // fraction of rise at which standing on ground = death
+const LAVA_RISE_TIME  = 8.0;   // seconds lava takes to reach tile surface
+const LAVA_HOLD_TIME  = 20.0;  // seconds lava stays at peak
+const LAVA_SINK_TIME  = 5.0;   // seconds lava takes to sink back down
+const LAVA_START_Y    = -5.0;  // Y where lava begins (below tiles)
+const LAVA_PEAK_Y     = 0.22;  // Y at full rise (just above tile tops ~0.025)
 
 // --- Lava Floor event state ---
 let lavaGroup             = null;
@@ -2457,7 +2457,7 @@ function startGame(seed, broadcast) {
   { // deterministic first-event time derived from seed
     let s = (seed ^ 0xf00dbeef) >>> 0;
     s = (Math.imul(s, 1664525) + 1013904223) | 0;
-    nextEventTime = 40 + ((s >>> 0) / 0x100000000) * 25; // 40–65 s
+    nextEventTime = 30 + ((s >>> 0) / 0x100000000) * 10; // 30–40 s
   }
   rainSchedule = []; rainScheduleIdx = 0; rainEventElapsed = 0;
   for (const fb of fallingBananas) scene.remove(fb.group);
@@ -2670,27 +2670,42 @@ function updateLavaEvent(dt) {
   if (!lavaGroup) return;
   lavaEventElapsed += dt;
 
-  // Rise phase
-  lavaProgress = Math.min(1, lavaEventElapsed / LAVA_RISE_TIME);
-  lavaGroup.position.y = LAVA_START_Y + (LAVA_PEAK_Y - LAVA_START_Y) * lavaProgress;
+  const holdEnd = LAVA_RISE_TIME + LAVA_HOLD_TIME;
+  const sinkEnd = holdEnd + LAVA_SINK_TIME;
+
+  if (lavaEventElapsed <= LAVA_RISE_TIME) {
+    // Rising phase
+    lavaProgress = lavaEventElapsed / LAVA_RISE_TIME;
+    lavaGroup.position.y = LAVA_START_Y + (LAVA_PEAK_Y - LAVA_START_Y) * lavaProgress;
+  } else if (lavaEventElapsed <= holdEnd) {
+    // Hold phase — lava stays at peak
+    lavaProgress = 1.0;
+    lavaGroup.position.y = LAVA_PEAK_Y;
+  } else if (lavaEventElapsed <= sinkEnd) {
+    // Sinking phase — lava retreats back below the tiles
+    const sinkT = (lavaEventElapsed - holdEnd) / LAVA_SINK_TIME;
+    lavaProgress = 1.0 - sinkT;
+    lavaGroup.position.y = LAVA_PEAK_Y + (LAVA_START_Y - LAVA_PEAK_Y) * sinkT;
+  } else {
+    endEvent();
+    return;
+  }
 
   // Animate emissive intensity — pulsing glow simulates flowing lava
   if (lavaSurface) {
     const pulse = 1.1 + Math.sin(lavaEventElapsed * 2.8) * 0.3 + Math.sin(lavaEventElapsed * 6.3) * 0.12;
-    lavaSurface.material.emissiveIntensity = pulse;
+    lavaSurface.material.emissiveIntensity = pulse * lavaProgress;
   }
   if (lavaLight) {
-    lavaLight.intensity = 3.5 + Math.sin(lavaEventElapsed * 3.1) * 1.0;
+    lavaLight.intensity = (3.5 + Math.sin(lavaEventElapsed * 3.1) * 1.0) * lavaProgress;
   }
 
-  // Kill check — once lava is near the tile surface, standing on the ground is fatal
-  if (!isDead && !isGhost && onGround && lavaProgress >= LAVA_KILL_PROGRESS) {
+  // Kill check — character model (feet at playerGroup.position.y) touches lava surface.
+  // Players on elevated structures are safe because lava never rises that high.
+  // No kill during the sinking phase — lava is retreating.
+  if (!isDead && !isGhost && lavaEventElapsed <= holdEnd &&
+      lavaGroup.position.y >= playerGroup.position.y - 0.05) {
     die({ burn: true });
-  }
-
-  // End event after rise + hold
-  if (lavaEventElapsed >= LAVA_RISE_TIME + LAVA_HOLD_TIME) {
-    endEvent();
   }
 }
 
@@ -2735,7 +2750,7 @@ function beginEvent() {
     cloudCircleTimer = cloudSchedule[0];
     spawnCloud();
   } else if (eventType === 'lava_floor') {
-    eventTimer            = LAVA_RISE_TIME + LAVA_HOLD_TIME + 5; // safety cap
+    eventTimer            = LAVA_RISE_TIME + LAVA_HOLD_TIME + LAVA_SINK_TIME + 5; // safety cap
     lavaEventElapsed      = 0;
     lavaProgress          = 0;
     // Freeze tile dropping for the duration — save remaining time so it can resume
