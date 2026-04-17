@@ -2040,11 +2040,13 @@ let _rainPeelBase    = 0x40000000;  // deterministic peel-ID pool for rain event
 let eventState       = 'idle';      // 'idle' | 'announcing' | 'running'
 let eventType        = null;
 let eventTimer       = 0;
+let eventLingerTimer = 0;           // keeps announcement visible after event begins
 let nextEventTime    = 0;           // set deterministically in startGame
 let rainSchedule     = [];          // [{t, x, z, peelId}] pre-generated at event start
 let rainScheduleIdx  = 0;
 let rainEventElapsed = 0;
-const EVENT_ANNOUNCE_S      = 10;
+const EVENT_ANNOUNCE_S      = 5;
+const EVENT_ANNOUNCE_LINGER = 5;    // extra seconds announcement stays up once event starts
 const RAIN_BANANAS_DURATION = 25;
 const fallingBananas        = [];   // { group, x, z, velY, peelId, rotVX, rotVZ }
 let eventCount              = 0;    // increments each time an event ends (for cycling)
@@ -2429,7 +2431,7 @@ function returnToLobby() {
   if (playerBanana) playerBanana.visible = false;
   isSlipping = false; slipTimer = 0; bananaImmunityTimer = 0;
   // Clean up random events
-  eventState = 'idle'; eventType = null; eventTimer = 0;
+  eventState = 'idle'; eventType = null; eventTimer = 0; eventLingerTimer = 0;
   eventCount = 0;
   for (const fb of fallingBananas) scene.remove(fb.group);
   fallingBananas.length = 0;
@@ -2477,7 +2479,7 @@ function startGame(seed, broadcast) {
   // Reset random events — deterministic so every client fires at the same time
   _gameSeed = seed;
   _rainPeelBase = 0x40000000;
-  eventState = 'idle'; eventType = null; eventTimer = 0;
+  eventState = 'idle'; eventType = null; eventTimer = 0; eventLingerTimer = 0;
   { // deterministic first-event time derived from seed
     let s = (seed ^ 0xf00dbeef) >>> 0;
     s = (Math.imul(s, 1664525) + 1013904223) | 0;
@@ -2743,7 +2745,7 @@ function triggerEvent(type) {
 
 function beginEvent() {
   eventState = 'running';
-  hideEventAnnouncement();
+  eventLingerTimer = EVENT_ANNOUNCE_LINGER; // keep banner up a bit longer
   if (eventType === 'loot_goblin') {
     eventTimer         = 90; // safety fallback
     goblinSchedule     = generateGoblinSchedule();
@@ -3560,6 +3562,10 @@ function loop(now) {
     if (eventState === 'announcing') {
       eventTimer -= dt;
       if (eventTimer <= 0) beginEvent();
+    }
+    if (eventLingerTimer > 0) {
+      eventLingerTimer -= dt;
+      if (eventLingerTimer <= 0) hideEventAnnouncement();
     }
     if (eventState === 'running') {
       eventTimer -= dt;
