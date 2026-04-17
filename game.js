@@ -3270,6 +3270,7 @@ function returnToLobby() {
   // Clean up spectator state if returning from spectating
   isSpectating   = false;
   spectateTarget = null;
+  playerGroup.visible = true;
   if (spectatorHudEl) spectatorHudEl.style.display = 'none';
   // Restore player appearance
   exitGhostMode();
@@ -5605,6 +5606,7 @@ function enterSpectatorMode() {
   isSpectating   = true;
   spectateTarget = pickNextSpectateTarget(null);
   spectateYaw    = 0;
+  playerGroup.visible = false; // hide local character while spectating
   if (menuEl) menuEl.classList.remove('active');
   updateSpectatorHUD();
   // Use pointer lock so the mouse can orbit the camera
@@ -5614,6 +5616,7 @@ function enterSpectatorMode() {
 function exitSpectatorMode() {
   isSpectating   = false;
   spectateTarget = null;
+  playerGroup.visible = true; // restore local character
   spectatorHudEl && (spectatorHudEl.style.display = 'none');
   document.exitPointerLock();
 }
