@@ -471,17 +471,49 @@ function makeCharacter(hexColor) {
   leftArmMesh.castShadow = true;
   leftArm.add(leftArmMesh);
 
-  // Shield (shown in left hand when equipped)
-  const shieldEquip = new THREE.Mesh(
-    new THREE.BoxGeometry(0.38, 0.42, 0.06),
-    new THREE.MeshStandardMaterial({ color: 0x2244cc, roughness: 0.5, metalness: 0.3 })
-  );
+  // Shield (shown in left hand when equipped) — heater / knight's shield shape
+  const shieldEquip = new THREE.Group();
   shieldEquip.position.set(0, -0.56, 0);
   shieldEquip.rotation.x = Math.PI / 2;
   shieldEquip.visible = false;
-  const shieldEmblem = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.07),
-    new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.8, roughness: 0.2 }));
-  shieldEmblem.position.set(0, 0, 0.05);
+  const shMat  = new THREE.MeshStandardMaterial({ color: 0xa8b8c8, metalness: 0.75, roughness: 0.22 });
+  const rimMat = new THREE.MeshStandardMaterial({ color: 0x6a7a88, metalness: 0.85, roughness: 0.18 });
+  // Heater shape: stack of boxes that get narrower from top → point
+  //  row y=0.14  wide top band
+  const sR1 = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.14, 0.055), shMat);
+  sR1.position.y = 0.17; shieldEquip.add(sR1);
+  //  row y=0.00  slightly narrower
+  const sR2 = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.12, 0.055), shMat);
+  sR2.position.y = 0.04; shieldEquip.add(sR2);
+  //  row y=-0.13  narrower still
+  const sR3 = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.12, 0.055), shMat);
+  sR3.position.y = -0.09; shieldEquip.add(sR3);
+  //  row y=-0.24  tapering
+  const sR4 = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.10, 0.055), shMat);
+  sR4.position.y = -0.21; shieldEquip.add(sR4);
+  //  pointed bottom tip
+  const sR5 = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.08, 0.050), shMat);
+  sR5.position.y = -0.31; shieldEquip.add(sR5);
+  // Rim border (slightly larger, darker layer behind)
+  const rimR1 = new THREE.Mesh(new THREE.BoxGeometry(0.40, 0.15, 0.030), rimMat);
+  rimR1.position.set(0, 0.17, -0.04); shieldEquip.add(rimR1);
+  const rimR2 = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.13, 0.030), rimMat);
+  rimR2.position.set(0, 0.04, -0.04); shieldEquip.add(rimR2);
+  const rimR3 = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.13, 0.030), rimMat);
+  rimR3.position.set(0, -0.09, -0.04); shieldEquip.add(rimR3);
+  const rimR4 = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.11, 0.030), rimMat);
+  rimR4.position.set(0, -0.21, -0.04); shieldEquip.add(rimR4);
+  const rimR5 = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 0.026), rimMat);
+  rimR5.position.set(0, -0.31, -0.04); shieldEquip.add(rimR5);
+  // Gold cross emblem
+  const crossMat = new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.85, roughness: 0.18 });
+  const crossH = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.045, 0.07), crossMat);
+  crossH.position.set(0, 0.04, 0.04); shieldEquip.add(crossH);
+  const crossV = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.28, 0.07), crossMat);
+  crossV.position.set(0, 0.00, 0.04); shieldEquip.add(crossV);
+  // shieldEmblem kept as invisible placeholder (code elsewhere toggles it)
+  const shieldEmblem = new THREE.Mesh(new THREE.BoxGeometry(0.001, 0.001, 0.001),
+    new THREE.MeshStandardMaterial());
   shieldEmblem.visible = false;
   shieldEquip.add(shieldEmblem);
   leftArm.add(shieldEquip);
@@ -1141,14 +1173,38 @@ function makeGroundItem(type, x, z, id = nextItemId()) {
     handle.position.y = -0.05;
     g.add(handle);
   } else if (type === 'shield') {
-    const face = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.48, 0.07),
-      new THREE.MeshStandardMaterial({ color: 0x2244cc, roughness: 0.5, metalness: 0.3 }));
-    face.position.y = 0.28;
-    g.add(face);
-    const emblem = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.08),
-      new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.8 }));
-    emblem.position.y = 0.28;
-    g.add(emblem);
+    // Heater / knight's shield — silver with gold cross, sitting upright on ground
+    const gShMat  = new THREE.MeshStandardMaterial({ color: 0xa8b8c8, metalness: 0.75, roughness: 0.22 });
+    const gRimMat = new THREE.MeshStandardMaterial({ color: 0x6a7a88, metalness: 0.85, roughness: 0.18 });
+    const gCrsMat = new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.85, roughness: 0.18 });
+    // Base offset so bottom tip sits just above y=0
+    const sy = 0.46; // centre of shield sits at this height
+    const gR1 = new THREE.Mesh(new THREE.BoxGeometry(0.50, 0.20, 0.075), gShMat);
+    gR1.position.y = sy + 0.24; g.add(gR1);
+    const gR2 = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.17, 0.075), gShMat);
+    gR2.position.y = sy + 0.06; g.add(gR2);
+    const gR3 = new THREE.Mesh(new THREE.BoxGeometry(0.33, 0.17, 0.075), gShMat);
+    gR3.position.y = sy - 0.12; g.add(gR3);
+    const gR4 = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.14, 0.075), gShMat);
+    gR4.position.y = sy - 0.29; g.add(gR4);
+    const gR5 = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.11, 0.066), gShMat);
+    gR5.position.y = sy - 0.43; g.add(gR5);
+    // Rim
+    const gRim1 = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.21, 0.038), gRimMat);
+    gRim1.position.set(0, sy + 0.24, -0.056); g.add(gRim1);
+    const gRim2 = new THREE.Mesh(new THREE.BoxGeometry(0.50, 0.18, 0.038), gRimMat);
+    gRim2.position.set(0, sy + 0.06, -0.056); g.add(gRim2);
+    const gRim3 = new THREE.Mesh(new THREE.BoxGeometry(0.39, 0.18, 0.038), gRimMat);
+    gRim3.position.set(0, sy - 0.12, -0.056); g.add(gRim3);
+    const gRim4 = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.15, 0.038), gRimMat);
+    gRim4.position.set(0, sy - 0.29, -0.056); g.add(gRim4);
+    const gRim5 = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.033), gRimMat);
+    gRim5.position.set(0, sy - 0.43, -0.056); g.add(gRim5);
+    // Gold cross
+    const gCH = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.062, 0.09), gCrsMat);
+    gCH.position.set(0, sy + 0.06, 0.055); g.add(gCH);
+    const gCV = new THREE.Mesh(new THREE.BoxGeometry(0.062, 0.38, 0.09), gCrsMat);
+    gCV.position.set(0, sy - 0.01, 0.055); g.add(gCV);
   } else if (type === 'bat') {
     const woodMat = new THREE.MeshStandardMaterial({ color: 0x8b4513, roughness: 0.75 });
     const tapeMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 });
