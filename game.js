@@ -2470,6 +2470,12 @@ async function setupMultiplayer() {
       } else if (data.type === 'ready') {
         const peer = peers.get(fromPeerId);
         if (peer) { peer.ready = !!data.ready; updateMenuReadyList(); }
+      } else if (data.type === 'match_info') {
+        // Sent by the host to peers who join mid-match so they can spectate correctly
+        if (!lastMatchSeed && gameState !== 'playing') {
+          lastMatchSeed          = data.seed;
+          lastMatchStartWallTime = Date.now() - (data.elapsed ?? 0) * 1000;
+        }
       } else if (data.type === 'gameover') {
         // Spectators receive the match result and transition to the game-over screen
         if (isSpectating) {
@@ -2532,6 +2538,9 @@ async function setupMultiplayer() {
         for (const it of groundItems) {
           sItem({ act: 'spawn', id: it.id, type: it.type, x: it.x, z: it.z, y: it.surfaceY ?? 0 }, peerId);
         }
+        // Also tell the new peer the current seed + elapsed time so they can reconstruct
+        // the arena if they choose to spectate (they may have missed the start event)
+        sendGameEvent?.({ type: 'match_info', seed: _gameSeed, elapsed: gameTime }, peerId);
       }
     });
     room.onPeerLeave(id => { removePeer(id); refreshPeerCount(); });
@@ -5638,6 +5647,26 @@ function enterSpectatorMode() {
     startGame(lastMatchSeed, false);
     // Advance gameTime to roughly match where the live match is right now
     gameTime = Math.max(0, (Date.now() - lastMatchStartWallTime) / 1000);
+    // Fast-forward tile state: mark tiles that are fully gone as invisible
+    // Tile i is selected at TILE_GRACE_S + i*TILE_INTERVAL and fully gone
+    // TILE_WARN_S + TILE_SINK_S seconds later.
+    let ftIdx = 0;
+    let ftSchedule = TILE_GRACE_S;
+    while (ftIdx < TILE_TOTAL) {
+      const goneAt = ftSchedule + TILE_WARN_S + TILE_SINK_S;
+      if (goneAt >= gameTime) break; // this tile and all later ones are not fully gone yet
+      const tile = tileObjects[tileOrder[ftIdx]];
+      if (tile) {
+        cleanupTileBreak(tile);
+        tile.state = 'gone';
+        tile.mesh.visible = false;
+      }
+      ftIdx++;
+      ftSchedule += TILE_INTERVAL;
+    }
+    // Resume tile dropping from where the match actually is
+    tileDropIndex = ftIdx;
+    nextTileTime  = ftSchedule; // if already < gameTime the loop will select the next tile immediately
   } else {
     if (menuEl) menuEl.classList.remove('active');
   }
