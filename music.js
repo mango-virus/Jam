@@ -385,7 +385,7 @@
 // at the original louder volume (0.38).
 // ---------------------------------------------------------------------------
 (function () {
-  const VOLUME = 0.38;
+  const VOLUME = 0.19;
   let ctx = null, gainNode = null, source = null, buffer = null;
   let muted = false, savedVolume = VOLUME;
 
@@ -428,19 +428,7 @@
     source = null;
   }
 
-  // Start as soon as the browser allows audio (first user gesture of any kind).
-  // Browsers require at least one interaction before AudioContext can run;
-  // listening on the document catches clicks, keypresses, and touches so the
-  // music begins the moment the player does anything at all on the page.
-  function autoStart() {
-    const events = ['pointerdown', 'keydown', 'touchstart'];
-    function onGesture() {
-      start();
-      events.forEach(ev => document.removeEventListener(ev, onGesture));
-    }
-    events.forEach(ev => document.addEventListener(ev, onGesture, { once: true }));
-  }
-  autoStart();
+  // Music starts only when explicitly called (e.g. when Ready Up is pressed).
 
   function setVolume(v) {
     savedVolume = v;
