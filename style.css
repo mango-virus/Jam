@@ -407,13 +407,14 @@ kbd {
 #pre-start-msg {
   display: none;
   text-align: center;
-  font-size: 1.05rem;
+  font-size: 0.92rem;
   font-weight: 600;
+  white-space: nowrap;
   color: #ffe066;
   background: rgba(255,200,0,0.08);
   border: 1px solid rgba(255,200,0,0.25);
   border-radius: 8px;
-  padding: 0.6rem 1rem;
+  padding: 0.55rem 1rem;
   margin-bottom: 0.9rem;
   letter-spacing: 0.01em;
 }

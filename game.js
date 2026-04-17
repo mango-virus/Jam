@@ -3013,7 +3013,7 @@ function showPreStartMsg(timeLeft) {
     preStartMsgEl.textContent = '';
   } else {
     preStartMsgEl.style.display = 'block';
-    preStartMsgEl.textContent = `⏳ Match starting in ${Math.ceil(timeLeft)}s — press Ready Up to join!`;
+    preStartMsgEl.textContent = `⏳ Match starting in ${Math.ceil(timeLeft)}s — Ready Up to join!`;
   }
 }
 const spectatorHudEl   = document.getElementById('spectator-hud');
