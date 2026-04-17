@@ -3527,15 +3527,10 @@ function loop(now) {
 
     // --- Random event system (deterministic — all clients run in sync via shared seed) ---
     if (eventState === 'idle' && gameTime >= nextEventTime) {
-      // First event of every match is always lava_floor; after that pick randomly
-      let nextType;
-      if (eventCount === 0) {
-        nextType = 'lava_floor';
-      } else {
-        let _es = (_gameSeed ^ (0xe0e00000 + eventCount * 0x9e3779b9)) >>> 0;
-        _es = (Math.imul(_es, 1664525) + 1013904223) | 0;
-        nextType = EVENT_TYPES[(_es >>> 0) % EVENT_TYPES.length];
-      }
+      // Pick event type randomly (deterministic via shared seed so all clients agree)
+      let _es = (_gameSeed ^ (0xe0e00000 + eventCount * 0x9e3779b9)) >>> 0;
+      _es = (Math.imul(_es, 1664525) + 1013904223) | 0;
+      const nextType = EVENT_TYPES[(_es >>> 0) % EVENT_TYPES.length];
       triggerEvent(nextType);
     }
     if (eventState === 'announcing') {
