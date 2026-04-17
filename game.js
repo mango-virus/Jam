@@ -2463,7 +2463,14 @@ async function setupMultiplayer() {
     const [sGame, onGame] = room.makeAction('game');
     sendGameEvent = sGame;
     onGame((data, fromPeerId) => {
-      if (data.type === 'start') {
+      if (data.type === 'pre_start') {
+        // Host has started the countdown — show the waiting message so players can ready up
+        preStartSeed    = data.seed;
+        preStartTimer   = 5.0;
+        preStartIsHost  = false;
+        showPreStartMsg(preStartTimer);
+        updateMenuReadyList(); // lock the Start button for everyone
+      } else if (data.type === 'start') {
         lastMatchSeed          = data.seed;
         lastMatchStartWallTime = Date.now();
         if (!localReady && !isSpectating) return; // not ready — stay in lobby
@@ -2839,6 +2846,9 @@ let tileOrder          = [];        // shuffled tile indices
 let tileDropIndex      = 0;         // next tile to warn
 let nextTileTime       = 0;         // game-time when next tile event fires
 let gameOverTimer      = 0;
+let preStartTimer      = 0;   // counts down from 5 while waiting for players to ready up
+let preStartSeed       = 0;   // seed chosen before the countdown begins
+let preStartIsHost     = false; // true on the client that pressed Start
 
 // Last match seed received — stored even when not ready so spectators can reconstruct the arena
 let lastMatchSeed          = 0;
@@ -2984,9 +2994,21 @@ const livesHudEl = document.getElementById('lives-hud');
 const menuEl     = document.getElementById('menu');
 const gameOverEl = document.getElementById('game-over');
 const readyListEl = document.getElementById('ready-list');
-const btnReady    = document.getElementById('btn-ready');
-const btnStart    = document.getElementById('btn-start');
-const btnSpectate = document.getElementById('btn-spectate');
+const btnReady       = document.getElementById('btn-ready');
+const btnStart       = document.getElementById('btn-start');
+const btnSpectate    = document.getElementById('btn-spectate');
+const preStartMsgEl  = document.getElementById('pre-start-msg');
+
+function showPreStartMsg(timeLeft) {
+  if (!preStartMsgEl) return;
+  if (timeLeft <= 0) {
+    preStartMsgEl.style.display = 'none';
+    preStartMsgEl.textContent = '';
+  } else {
+    preStartMsgEl.style.display = '';
+    preStartMsgEl.textContent = `⏳ Match starting in ${Math.ceil(timeLeft)}s — press Ready Up to join!`;
+  }
+}
 const spectatorHudEl   = document.getElementById('spectator-hud');
 const spectatorNameEl  = document.getElementById('spectator-name');
 
@@ -3301,6 +3323,10 @@ function returnToLobby() {
   localReady            = false;
   matchParticipantCount = 0;
   isDead                = false;
+  preStartTimer         = 0;
+  preStartSeed          = 0;
+  preStartIsHost        = false;
+  showPreStartMsg(0);
   // Clean up spectator state if returning from spectating
   if (isSpectating) {
     isSpectating   = false;
@@ -5182,6 +5208,17 @@ function loop(now) {
     if (gameOverTimer <= 0) returnToLobby();
   }
 
+  // Pre-start countdown — lobby phase where players can press Ready Up before the match
+  if (preStartTimer > 0 && gameState === 'lobby') {
+    preStartTimer -= dt;
+    showPreStartMsg(preStartTimer);
+    if (preStartTimer <= 0) {
+      showPreStartMsg(0);
+      if (preStartIsHost) startGame(preStartSeed, true); // host fires the actual start
+      // non-host clients wait for the 'start' game event that startGame broadcasts
+    }
+  }
+
   // --- Player physics (skipped entirely while spectating) ---
   if (!isSpectating) {
   // --- Movement ---
@@ -5715,8 +5752,8 @@ function updateMenuReadyList() {
     e.innerHTML = `<span class="ready-dot ${peer.ready ? 'is-ready' : ''}"></span><span style="color:#${peer.pColor || 'ffffff'}">${peer.username || '?'}</span>`;
     readyListEl.appendChild(e);
   }
-  // Enable start button only if ready AND no match is already in progress
-  if (btnStart) btnStart.disabled = !localReady || anyPeerInMatch();
+  // Enable start button only if ready, no match in progress, and no countdown active
+  if (btnStart) btnStart.disabled = !localReady || anyPeerInMatch() || preStartTimer > 0;
   updateMenuSpectateBtn();
 }
 
@@ -5733,9 +5770,13 @@ if (btnReady) {
 
 if (btnStart) {
   btnStart.addEventListener('click', () => {
-    if (!localReady || anyPeerInMatch()) return;
-    const seed = Date.now() & 0xffffffff;
-    startGame(seed, true);
+    if (!localReady || anyPeerInMatch() || preStartTimer > 0) return;
+    preStartSeed    = Date.now() & 0xffffffff;
+    preStartTimer   = 5.0;
+    preStartIsHost  = true;
+    sendGameEvent?.({ type: 'pre_start', seed: preStartSeed });
+    showPreStartMsg(preStartTimer);
+    updateMenuReadyList();
   });
 }
 

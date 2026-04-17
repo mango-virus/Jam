@@ -404,6 +404,20 @@ kbd {
 }
 #menu-name-input::placeholder { opacity: 0.35; }
 
+#pre-start-msg {
+  display: none;
+  text-align: center;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #ffe066;
+  background: rgba(255,200,0,0.08);
+  border: 1px solid rgba(255,200,0,0.25);
+  border-radius: 8px;
+  padding: 0.6rem 1rem;
+  margin-bottom: 0.9rem;
+  letter-spacing: 0.01em;
+}
+
 #ready-list {
   min-height: 2rem;
   margin-bottom: 1.2rem;
