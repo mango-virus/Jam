@@ -815,38 +815,48 @@ function makeCharacter(hexColor) {
   ghostBody.add(ghostGlow);
 
   // Rocket boots — shown on feet when equipped
+  // normalBody.y = 0.10 in world; floor = normalBody local y = -0.10
+  // Legs are 0.5 tall centred at y=0.15 → bottom at -0.10 (floor)
+  // Boot group at y=-0.05 so a sole of height 0.10 bottoms out exactly at -0.10
   const bootsGroup = new THREE.Group();
   bootsGroup.visible = false;
-  const bootsMat  = new THREE.MeshStandardMaterial({ color: 0x555566, roughness: 0.4, metalness: 0.6 });
-  const thrusterMat = new THREE.MeshStandardMaterial({ color: 0xff6600, emissive: new THREE.Color(0xff3300), emissiveIntensity: 0.6, roughness: 0.3 });
-  // Left boot
-  const leftBoot = new THREE.Group();
-  leftBoot.position.set(-0.13, 0.2, 0);
-  const lSole = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.08, 0.28), bootsMat);
-  lSole.position.y = 0;
-  leftBoot.add(lSole);
-  const lThruster = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.12, 8), thrusterMat);
-  lThruster.position.set(0, -0.08, 0);
-  leftBoot.add(lThruster);
-  const lFin1 = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.1, 0.06), bootsMat);
-  lFin1.position.set(0.1, 0, -0.05); leftBoot.add(lFin1);
-  const lFin2 = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.1, 0.06), bootsMat);
-  lFin2.position.set(-0.1, 0, -0.05); leftBoot.add(lFin2);
-  bootsGroup.add(leftBoot);
-  // Right boot
-  const rightBoot = new THREE.Group();
-  rightBoot.position.set(0.13, 0.2, 0);
-  const rSole = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.08, 0.28), bootsMat);
-  rSole.position.y = 0;
-  rightBoot.add(rSole);
-  const rThruster = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.12, 8), thrusterMat);
-  rThruster.position.set(0, -0.08, 0);
-  rightBoot.add(rThruster);
-  const rFin1 = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.1, 0.06), bootsMat);
-  rFin1.position.set(0.1, 0, -0.05); rightBoot.add(rFin1);
-  const rFin2 = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.1, 0.06), bootsMat);
-  rFin2.position.set(-0.1, 0, -0.05); rightBoot.add(rFin2);
-  bootsGroup.add(rightBoot);
+  const bootsMat    = new THREE.MeshStandardMaterial({ color: 0x333344, roughness: 0.35, metalness: 0.75 });
+  const thrusterMat = new THREE.MeshStandardMaterial({ color: 0xff6600, emissive: new THREE.Color(0xff3300), emissiveIntensity: 0.8, roughness: 0.3 });
+
+  function makeOneBoot(xPos) {
+    const boot = new THREE.Group();
+    boot.position.set(xPos, -0.05, 0);
+
+    // Sole — sits on the floor, bottom at normalBody y=-0.10
+    const sole = new THREE.Mesh(new THREE.BoxGeometry(0.21, 0.10, 0.30), bootsMat);
+    sole.position.y = 0; // centre of sole; bottom = -0.05, top = +0.05
+    boot.add(sole);
+
+    // Ankle cuff — wraps lower leg above the sole
+    const cuff = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.14, 0.22), bootsMat);
+    cuff.position.y = 0.12; // sits just above the sole top
+    boot.add(cuff);
+
+    // Rear thruster — horizontal cylinder pointing backward (no floor clip)
+    const thruster = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.06, 0.16, 8), thrusterMat);
+    thruster.rotation.x = Math.PI / 2;          // lay on its side, nozzle faces -z
+    thruster.position.set(0, 0.06, -0.20);
+    boot.add(thruster);
+
+    // Side fins
+    const finGeo = new THREE.BoxGeometry(0.04, 0.14, 0.10);
+    const finL = new THREE.Mesh(finGeo, bootsMat);
+    finL.position.set( 0.13, 0.07, -0.08);
+    boot.add(finL);
+    const finR = new THREE.Mesh(finGeo, bootsMat);
+    finR.position.set(-0.13, 0.07, -0.08);
+    boot.add(finR);
+
+    return boot;
+  }
+
+  bootsGroup.add(makeOneBoot(-0.13));
+  bootsGroup.add(makeOneBoot( 0.13));
   normalBody.add(bootsGroup);
 
   return { group, normalBody, ghostBody, leftArm, rightArm, leftLeg, rightLeg, swordGroup, gloveGroup, batGroup, shieldEquip, shieldEmblem, armorGroup, bootsGroup };
@@ -1430,7 +1440,7 @@ document.addEventListener('keydown', e => {
         hasDoubleJumped = false;
       } else if (hasBoots && !hasDoubleJumped && !hasFallenOff) {
         // Second jump — only this one costs a charge
-        velY = JUMP_FORCE * 0.9;
+        velY = JUMP_FORCE * 2.0;
         hasDoubleJumped = true;
         bootsDurability--;
         if (bootsDurability <= 0) breakBoots(); else updateDurabilityHUD();
