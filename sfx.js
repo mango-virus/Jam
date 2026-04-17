@@ -436,5 +436,51 @@
     src.start(t); src.stop(t + 0.28);
   }
 
-  window.SFX = { punch, swordHit, gloveHit, batNormal, batHomeRun, shieldBlock, shieldBreak, itemBreak, pickup, die, respawn, ghostPunch, swordSwing, gloveSwing, batSwing, rocketBoost };
+  // ── BANANA PLACE — soft splat/squish ────────────────────────────
+  function bananaPlace() {
+    ensureCtx(); resume();
+    const t = ctx.currentTime;
+    // Soft splat
+    const src = ctx.createBufferSource();
+    src.buffer = noise(0.1);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 500;
+    const g = ctx.createGain();
+    src.connect(lp); lp.connect(g); g.connect(master);
+    env(g, t, 0.002, 0.01, 0.08, 0.5);
+    src.start(t); src.stop(t + 0.12);
+    // Short plop tone
+    const o = ctx.createOscillator();
+    const g2 = ctx.createGain();
+    o.type = 'sine'; o.frequency.setValueAtTime(220, t);
+    o.frequency.exponentialRampToValueAtTime(90, t + 0.09);
+    o.connect(g2); g2.connect(master);
+    env(g2, t, 0.002, 0.005, 0.08, 0.35);
+    o.start(t); o.stop(t + 0.1);
+  }
+
+  // ── BANANA SLIP — cartoon descending woop + clatter ─────────────
+  function bananaSlip() {
+    ensureCtx(); resume();
+    const t = ctx.currentTime;
+    // Descending woop
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'sawtooth'; o.frequency.setValueAtTime(900, t);
+    o.frequency.exponentialRampToValueAtTime(140, t + 0.45);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 1800;
+    o.connect(lp); lp.connect(g); g.connect(master);
+    env(g, t, 0.005, 0.05, 0.38, 0.55);
+    o.start(t); o.stop(t + 0.5);
+    // Impact clatter
+    const src = ctx.createBufferSource();
+    src.buffer = noise(0.18);
+    const g2 = ctx.createGain();
+    src.connect(g2); g2.connect(master);
+    env(g2, t + 0.1, 0.002, 0.01, 0.15, 0.35);
+    src.start(t + 0.1); src.stop(t + 0.28);
+  }
+
+  window.SFX = { punch, swordHit, gloveHit, batNormal, batHomeRun, shieldBlock, shieldBreak, itemBreak, pickup, die, respawn, ghostPunch, swordSwing, gloveSwing, batSwing, rocketBoost, bananaPlace, bananaSlip };
 })();

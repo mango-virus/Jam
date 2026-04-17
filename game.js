@@ -581,6 +581,27 @@ function makeCharacter(hexColor) {
   batGroup.add(batCap);
   rightArm.add(batGroup);
 
+  // Banana (shown in right hand when equipped)
+  const bananaGroup = new THREE.Group();
+  bananaGroup.position.set(0.04, -0.44, 0.06);
+  bananaGroup.visible = false;
+  const banMat  = new THREE.MeshStandardMaterial({ color: 0xffe135, roughness: 0.65 });
+  const bTipMat = new THREE.MeshStandardMaterial({ color: 0x7a5200, roughness: 0.8 });
+  // Three box segments forming a curve
+  const bs1 = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.21, 0.07), banMat);
+  bs1.position.set(0, -0.07, 0); bs1.rotation.z = 0.35; bananaGroup.add(bs1);
+  const bs2 = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.19, 0.065), banMat);
+  bs2.position.set(0.07, 0.09, 0); bs2.rotation.z = 0.04; bananaGroup.add(bs2);
+  const bs3 = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.15, 0.055), banMat);
+  bs3.position.set(0.12, 0.24, 0); bs3.rotation.z = -0.22; bananaGroup.add(bs3);
+  // Stem tip (bottom)
+  const bTip1 = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.055, 0.045), bTipMat);
+  bTip1.position.set(-0.03, -0.18, 0); bananaGroup.add(bTip1);
+  // Point tip (top)
+  const bTip2 = new THREE.Mesh(new THREE.BoxGeometry(0.038, 0.048, 0.038), bTipMat);
+  bTip2.position.set(0.155, 0.32, 0); bananaGroup.add(bTip2);
+  rightArm.add(bananaGroup);
+
   normalBody.add(rightArm);
 
   // ── Legs — random trouser colour ────────────────────────────
@@ -1007,7 +1028,7 @@ function makeCharacter(hexColor) {
     set visible(v) { leftBootMesh.visible = v; rightBootMesh.visible = v; }
   };
 
-  return { group, normalBody, ghostBody, leftArm, rightArm, leftLeg, rightLeg, swordGroup, gloveGroup, batGroup, shieldEquip, shieldEmblem, armorGroup, bootsGroup };
+  return { group, normalBody, ghostBody, leftArm, rightArm, leftLeg, rightLeg, swordGroup, gloveGroup, batGroup, bananaGroup, shieldEquip, shieldEmblem, armorGroup, bootsGroup };
 }
 
 // ------------------------------------------------------------------
@@ -1017,6 +1038,7 @@ function makeCharacter(hexColor) {
 const { group: playerGroup, normalBody: playerNormalBody, ghostBody: playerGhostBody,
         leftArm, rightArm, leftLeg, rightLeg,
         swordGroup: playerSword, gloveGroup: playerGlove, batGroup: playerBat,
+        bananaGroup: playerBanana,
         shieldEquip: playerShield, shieldEmblem: playerShieldEmblem,
         armorGroup: playerArmorGroup, bootsGroup: playerBoots } = makeCharacter('#' + incoming.color);
 scene.add(playerGroup);
@@ -1051,14 +1073,29 @@ let hasBat         = false;
 let batDurability    = 0;
 let hasBoots      = false;
 let bootsDurability = 0;
-let hasDoubleJumped = false; // consumed when double jump used
-let isBlocking     = false;
+let hasDoubleJumped      = false; // consumed when double jump used
+let isBlocking           = false;
+let hasBanana            = false;
+let bananaDurability     = 0;
+let bananaImmunityTimer  = 0;   // >0 = placer is immune to their own peel
+let isSlipping           = false;
+let slipTimer            = 0;
 
-const SWORD_DURABILITY  = 10;
-const SHIELD_DURABILITY = 7;
-const GLOVE_DURABILITY  = 2;
-const BAT_DURABILITY    = 1;
-const BOOTS_DURABILITY  = 6;
+// Active banana peels in the arena: { group, x, z, id }
+const bananaPeels = [];
+let _nextPeelId   = 0;
+function nextPeelId() { return ++_nextPeelId; }
+let sendPeel = null; // P2P action for peel sync
+
+const SWORD_DURABILITY   = 10;
+const SHIELD_DURABILITY  = 7;
+const GLOVE_DURABILITY   = 2;
+const BAT_DURABILITY     = 1;
+const BOOTS_DURABILITY   = 6;
+const BANANA_DURABILITY  = 1;
+const BANANA_SLIDE_FORCE = 42;  // horizontal slide speed; at PUNCH_DECAY=2.5 this ≈ 2 tile-lengths
+const BANANA_IMMUNITY    = 2.0; // seconds placer is immune after dropping peel
+const PEEL_PICKUP_R      = 1.1; // metres — collision radius for slipping on peel
 
 // Active lightning effects { group, light, bolts, timer, maxTimer }
 const activeEffects = [];
@@ -1158,6 +1195,21 @@ function makeGroundItem(type, x, z, id = nextItemId()) {
     const glow = new THREE.PointLight(0xff6600, 0.7, 2.5);
     glow.position.y = 0.1;
     g.add(glow);
+  } else if (type === 'banana') {
+    const banMat2 = new THREE.MeshStandardMaterial({ color: 0xffe135, roughness: 0.65 });
+    const tipMat2 = new THREE.MeshStandardMaterial({ color: 0x7a5200, roughness: 0.8 });
+    const seg1 = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.30, 0.10), banMat2);
+    seg1.position.set(0, 0.15, 0); seg1.rotation.z = 0.38; g.add(seg1);
+    const seg2 = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.28, 0.09), banMat2);
+    seg2.position.set(0.11, 0.37, 0); seg2.rotation.z = 0.08; g.add(seg2);
+    const seg3 = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.22, 0.08), banMat2);
+    seg3.position.set(0.19, 0.57, 0); seg3.rotation.z = -0.28; g.add(seg3);
+    const bTip1g = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.08, 0.07), tipMat2);
+    bTip1g.position.set(-0.05, 0.03, 0); g.add(bTip1g);
+    const bTip2g = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.07, 0.06), tipMat2);
+    bTip2g.position.set(0.24, 0.69, 0); g.add(bTip2g);
+    const bGlow = new THREE.PointLight(0xffee00, 0.5, 2.0);
+    bGlow.position.y = 0.3; g.add(bGlow);
   } else { // glove
     const body = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8),
       new THREE.MeshStandardMaterial({ color: 0xcc2200, roughness: 0.55, metalness: 0.08 }));
@@ -1177,6 +1229,53 @@ function makeGroundItem(type, x, z, id = nextItemId()) {
   return { group: g, type, x, z, id, expires: performance.now() / 1000 + ITEM_LIFETIME };
 }
 
+// Creates a banana peel Three.js group at (x, z) and adds it to the scene.
+function makeBananaPeel(x, z) {
+  const g = new THREE.Group();
+  g.position.set(x, 0.03, z);
+  const peelMat = new THREE.MeshStandardMaterial({ color: 0xd4b800, roughness: 0.8, side: THREE.DoubleSide });
+  // 4 flaps radiating out
+  for (let i = 0; i < 4; i++) {
+    const angle = (i / 4) * Math.PI * 2;
+    const flap = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.025, 0.30), peelMat);
+    flap.position.set(Math.sin(angle) * 0.16, 0, Math.cos(angle) * 0.16);
+    flap.rotation.y = angle;
+    g.add(flap);
+  }
+  // Center nub
+  const center = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.035, 8), peelMat);
+  g.add(center);
+  g.rotation.y = Math.random() * Math.PI * 2; // random orientation each time
+  scene.add(g);
+  return g;
+}
+
+// Place a peel at the player's position and broadcast to peers.
+function placePeel() {
+  const x = playerGroup.position.x;
+  const z = playerGroup.position.z;
+  const id = nextPeelId();
+  const group = makeBananaPeel(x, z);
+  bananaPeels.push({ group, x, z, id });
+  bananaImmunityTimer = BANANA_IMMUNITY;
+  window.SFX?.bananaPlace();
+  sendPeel?.({ act: 'place', id, x, z });
+  // Consume banana
+  hasBanana = false; bananaDurability = 0;
+  playerBanana.visible = false;
+  window.SFX?.itemBreak();
+  updateDurabilityHUD();
+}
+
+// Remove a peel by id from the scene and array.
+function removePeelById(id) {
+  const idx = bananaPeels.findIndex(p => p.id === id);
+  if (idx !== -1) {
+    scene.remove(bananaPeels[idx].group);
+    bananaPeels.splice(idx, 1);
+  }
+}
+
 function pipBar(cur, max) {
   const ratio = cur / max;
   const color = ratio > 0.5 ? '#7fff7f' : ratio > 0.25 ? '#ffcc00' : '#ff4444';
@@ -1190,8 +1289,9 @@ function updateDurabilityHUD() {
   if (hasSword)  parts.push(`⚔ ${pipBar(swordDurability,  SWORD_DURABILITY)}`);
   if (hasGlove)  parts.push(`🥊 ${pipBar(gloveDurability,  GLOVE_DURABILITY)}`);
   if (hasBat)    parts.push(`🏏 ${pipBar(batDurability,    BAT_DURABILITY)}`);
-  if (hasBoots)  parts.push(`🚀 ${pipBar(bootsDurability,  BOOTS_DURABILITY)}`);
-  if (hasShield) parts.push(`🛡 ${pipBar(shieldDurability, SHIELD_DURABILITY)}`);
+  if (hasBoots)   parts.push(`🚀 ${pipBar(bootsDurability,  BOOTS_DURABILITY)}`);
+  if (hasShield)  parts.push(`🛡 ${pipBar(shieldDurability, SHIELD_DURABILITY)}`);
+  if (hasBanana)  parts.push(`🍌 ${pipBar(bananaDurability, BANANA_DURABILITY)}`);
   durabilityEl.innerHTML = parts.join('&nbsp;&nbsp;');
 }
 
@@ -1209,6 +1309,9 @@ function equipItem(type) {
     hasBoots = true; bootsDurability = BOOTS_DURABILITY;
     hasDoubleJumped = false;
     playerBoots.visible = true;
+  } else if (type === 'banana') {
+    hasBanana = true; bananaDurability = BANANA_DURABILITY;
+    playerBanana.visible = true;
   } else {
     hasShield = true; shieldDurability = SHIELD_DURABILITY;
     playerShield.visible = true;
@@ -1253,6 +1356,13 @@ function breakShield() {
   updateDurabilityHUD();
 }
 
+function breakBanana() {
+  hasBanana = false; bananaDurability = 0;
+  playerBanana.visible = false;
+  window.SFX?.itemBreak();
+  updateDurabilityHUD();
+}
+
 function dropItem() {
   const px = playerGroup.position.x, pz = playerGroup.position.z;
   const dropAngle = playerGroup.rotation.y + Math.PI;
@@ -1266,6 +1376,7 @@ function dropItem() {
   if (hasBat)    { spawnDrop('bat',    1.2); hasBat    = false; batDurability    = 0; playerBat.visible    = false; }
   if (hasBoots)  { spawnDrop('boots',  0.8); hasBoots  = false; bootsDurability  = 0; playerBoots.visible  = false; hasDoubleJumped = false; }
   if (hasShield) { spawnDrop('shield', 0.6); hasShield = false; shieldDurability = 0; playerShield.visible = false; }
+  if (hasBanana) { spawnDrop('banana', 1.0); hasBanana = false; bananaDurability = 0; playerBanana.visible = false; }
   updateDurabilityHUD();
 }
 
@@ -1307,6 +1418,7 @@ function broadcastSelf() {
     bat:      hasBat,
     boots:    hasBoots,
     shield:   hasShield,
+    banana:   hasBanana,
     punching: punchTimer > 0,
     blocking: hasShield && isBlocking,
     lives:    localLives,
@@ -1345,21 +1457,23 @@ function addPeer(id, data) {
   char.group.position.set(data.x ?? 0, 0, data.z ?? 0);
   char.group.rotation.y = data.rotY ?? 0;
   scene.add(char.group);
-  peers.set(id, { ...char, tx: data.x ?? 0, ty: data.y ?? 0, tz: data.z ?? 0, rotY: data.rotY ?? 0, moving: false, swing: 0, punchTimer: 0, blocking: false, username: data.username, redrawLabel, pSword: !!data.sword, pGlove: !!data.glove, pBat: !!data.bat, pBoots: !!data.boots, pShield: !!data.shield, pColor: data.color || 'ffffff', lives: data.lives ?? 3, isGhost: !!data.isGhost, hasArmor: !!data.hasArmor, ready: !!data.ready });
+  peers.set(id, { ...char, tx: data.x ?? 0, ty: data.y ?? 0, tz: data.z ?? 0, rotY: data.rotY ?? 0, moving: false, swing: 0, punchTimer: 0, blocking: false, username: data.username, redrawLabel, pSword: !!data.sword, pGlove: !!data.glove, pBat: !!data.bat, pBoots: !!data.boots, pShield: !!data.shield, pBanana: !!data.banana, pColor: data.color || 'ffffff', lives: data.lives ?? 3, isGhost: !!data.isGhost, hasArmor: !!data.hasArmor, ready: !!data.ready });
   updateMenuReadyList();
 }
 
-function applyPeerEquip(peer, sword, glove, bat, boots, shield) {
+function applyPeerEquip(peer, sword, glove, bat, boots, shield, banana) {
   peer.pSword  = sword;
   peer.pGlove  = glove;
   peer.pBat    = bat;
   peer.pBoots  = boots;
   peer.pShield = shield;
-  if (peer.swordGroup)  peer.swordGroup.visible = !!sword;
-  if (peer.gloveGroup)  peer.gloveGroup.visible = !!glove;
-  if (peer.batGroup)    peer.batGroup.visible   = !!bat;
-  if (peer.bootsGroup)  peer.bootsGroup.visible = !!boots;
+  peer.pBanana = banana;
+  if (peer.swordGroup)  peer.swordGroup.visible  = !!sword;
+  if (peer.gloveGroup)  peer.gloveGroup.visible  = !!glove;
+  if (peer.batGroup)    peer.batGroup.visible    = !!bat;
+  if (peer.bootsGroup)  peer.bootsGroup.visible  = !!boots;
   if (peer.shieldEquip) peer.shieldEquip.visible = !!shield;
+  if (peer.bananaGroup) peer.bananaGroup.visible = !!banana;
 }
 
 function applyPeerGhostMode(peer, ghost) {
@@ -1461,6 +1575,19 @@ async function setupMultiplayer() {
       }
     });
 
+    const [sPeel, onPeel] = room.makeAction('peel');
+    sendPeel = sPeel;
+    onPeel((data) => {
+      if (data.act === 'place') {
+        if (!bananaPeels.some(p => p.id === data.id)) {
+          const group = makeBananaPeel(data.x, data.z);
+          bananaPeels.push({ group, x: data.x, z: data.z, id: data.id });
+        }
+      } else if (data.act === 'slip' || data.act === 'remove') {
+        removePeelById(data.id);
+      }
+    });
+
     const [sItem, onItem] = room.makeAction('item');
     sendItemEvent = sItem;
     onItem((data) => {
@@ -1504,8 +1631,8 @@ async function setupMultiplayer() {
           peer.username = data.username;
           peer.redrawLabel(data.username || '?');
         }
-        if (!!data.sword !== peer.pSword || !!data.glove !== peer.pGlove || !!data.bat !== peer.pBat || !!data.boots !== peer.pBoots || !!data.shield !== peer.pShield)
-          applyPeerEquip(peer, !!data.sword, !!data.glove, !!data.bat, !!data.boots, !!data.shield);
+        if (!!data.sword !== peer.pSword || !!data.glove !== peer.pGlove || !!data.bat !== peer.pBat || !!data.boots !== peer.pBoots || !!data.shield !== peer.pShield || !!data.banana !== peer.pBanana)
+          applyPeerEquip(peer, !!data.sword, !!data.glove, !!data.bat, !!data.boots, !!data.shield, !!data.banana);
         if (data.punching && peer.punchTimer <= 0) peer.punchTimer = 0.35;
         peer.blocking = !!data.blocking;
         if (!!data.isGhost !== peer.isGhost) applyPeerGhostMode(peer, !!data.isGhost);
@@ -1583,7 +1710,13 @@ document.addEventListener('mousemove', e => {
 
 document.addEventListener('mousedown', e => {
   if (!isLocked) return;
-  if (e.button === 0) doPunch();
+  if (e.button === 0) {
+    if (hasBanana && gameState === 'playing' && !isDead && !isGhost) {
+      placePeel();
+    } else {
+      doPunch();
+    }
+  }
   if (e.button === 2) isBlocking = true;
 });
 document.addEventListener('mouseup', e => {
@@ -1625,7 +1758,7 @@ document.addEventListener('keydown', e => {
           groundItems.push(dropped);
           sendItemEvent?.({ act: 'drop', id: dropped.id, type: dropped.type, x: dropped.x, z: dropped.z });
         }
-        const isWeapon = it.type === 'sword' || it.type === 'glove' || it.type === 'bat';
+        const isWeapon = it.type === 'sword' || it.type === 'glove' || it.type === 'bat' || it.type === 'banana';
         if (it.type === 'boots' && hasBoots) {
           swapDrop('boots', 0.8);
           hasBoots = false; bootsDurability = 0; playerBoots.visible = false; hasDoubleJumped = false;
@@ -1633,6 +1766,7 @@ document.addEventListener('keydown', e => {
         if (isWeapon && hasSword)  { swapDrop('sword',  1.2); hasSword  = false; swordDurability  = 0; playerSword.visible  = false; }
         if (isWeapon && hasGlove)  { swapDrop('glove',  1.2); hasGlove  = false; gloveDurability  = 0; playerGlove.visible  = false; }
         if (isWeapon && hasBat)    { swapDrop('bat',    1.2); hasBat    = false; batDurability    = 0; playerBat.visible    = false; }
+        if (isWeapon && hasBanana) { swapDrop('banana', 1.0); hasBanana = false; bananaDurability = 0; playerBanana.visible = false; }
         if (it.type === 'shield' && hasShield) {
           swapDrop('shield', 0.6);
           hasShield = false; shieldDurability = 0; playerShield.visible = false;
@@ -1800,11 +1934,13 @@ function enterGhostMode() {
   isDead  = false;
   hasFallenOff = false; // ghosts fly freely
   // Drop items
-  hasSword = false; swordDurability = 0; playerSword.visible = false;
-  hasGlove = false; gloveDurability = 0; playerGlove.visible = false;
-  hasBat   = false; batDurability   = 0; playerBat.visible   = false;
+  hasSword  = false; swordDurability  = 0; playerSword.visible  = false;
+  hasGlove  = false; gloveDurability  = 0; playerGlove.visible  = false;
+  hasBat    = false; batDurability    = 0; playerBat.visible    = false;
   hasShield = false; shieldDurability = 0; playerShield.visible = false;
   hasBoots  = false; bootsDurability  = 0; playerBoots.visible  = false; hasDoubleJumped = false;
+  hasBanana = false; bananaDurability = 0; playerBanana.visible = false;
+  isSlipping = false; slipTimer = 0;
   updateDurabilityHUD();
   // Remove armor
   hasArmor = false;
@@ -1961,10 +2097,15 @@ function returnToLobby() {
   tileDropIndex = 0;
   gameTime = 0;
   platform.visible = true;
-  // Clear all ground items
+  // Clear all ground items and banana peels
   for (const it of groundItems) scene.remove(it.group);
   groundItems.length = 0;
   itemTimer = Date.now() + 5000;
+  for (const p of bananaPeels) scene.remove(p.group);
+  bananaPeels.length = 0;
+  hasBanana = false; bananaDurability = 0;
+  if (playerBanana) playerBanana.visible = false;
+  isSlipping = false; slipTimer = 0; bananaImmunityTimer = 0;
   // Move player to lobby
   playerGroup.position.set(0, 1, 0);
   velY = 0; velX = 0; velZ = 0;
@@ -1989,9 +2130,15 @@ function startGame(seed, broadcast) {
   gameState  = 'playing';
   isHost     = !!broadcast; // the player who starts the game owns item spawning
   localLives = 3 + (hasArmor ? 1 : 0);
-  isGhost      = false;
-  isDead       = false;
-  homeRunDeath = false;
+  isGhost             = false;
+  isDead              = false;
+  homeRunDeath        = false;
+  isSlipping          = false;
+  slipTimer           = 0;
+  bananaImmunityTimer = 0;
+  hasBanana = false; bananaDurability = 0; playerBanana.visible = false;
+  for (const p of bananaPeels) scene.remove(p.group);
+  bananaPeels.length = 0;
   ghostPunchCooldown = 0;
   lastHitBy  = null;
   window.GameMusic?.stop();
@@ -2182,6 +2329,15 @@ function loop(now) {
     if (deathTimer <= 0) respawn();
   }
 
+  // Banana immunity countdown
+  if (bananaImmunityTimer > 0) bananaImmunityTimer -= dt;
+
+  // Slip timer (controls how long steering is locked out)
+  if (isSlipping) {
+    slipTimer -= dt;
+    if (slipTimer <= 0) isSlipping = false;
+  }
+
   // Ghost flight mode
   if (isGhost) {
     isMoving = _dir.lengthSq() > 0;
@@ -2202,7 +2358,7 @@ function loop(now) {
       hint.textContent = cd > 0 ? `👻 Ghost punch ready in ${cd.toFixed(1)}s` : '👻 LMB — Ghost Punch (big knockback)';
     }
   } else {
-    isMoving = _dir.lengthSq() > 0 && !isDead;
+    isMoving = _dir.lengthSq() > 0 && !isDead && !isSlipping;
   }
 
   const isSprinting = keys['shift'] && !isGhost;
@@ -2413,7 +2569,7 @@ function loop(now) {
     const pos = randomItemPos();
     if (pos) {
       const r = Math.random();
-      const type = r < 0.20 ? 'sword' : r < 0.40 ? 'shield' : r < 0.60 ? 'glove' : r < 0.80 ? 'bat' : 'boots';
+      const type = r < 0.18 ? 'sword' : r < 0.36 ? 'shield' : r < 0.52 ? 'glove' : r < 0.66 ? 'bat' : r < 0.83 ? 'boots' : 'banana';
       const it = makeGroundItem(type, pos.x, pos.z);
       groundItems.push(it);
       sendItemEvent?.({ act: 'spawn', id: it.id, type: it.type, x: it.x, z: it.z });
@@ -2443,6 +2599,35 @@ function loop(now) {
     it.group.rotation.y += dt * 1.2;
   }
 
+
+  // --- Banana peel tile-sinking removal ---
+  for (let i = bananaPeels.length - 1; i >= 0; i--) {
+    const peel = bananaPeels[i];
+    if (isTileUnstable(peel.x, peel.z)) {
+      scene.remove(peel.group);
+      bananaPeels.splice(i, 1);
+      sendPeel?.({ act: 'remove', id: peel.id });
+    }
+  }
+
+  // --- Banana peel slip detection (local player only) ---
+  if (gameState === 'playing' && !isDead && !isGhost && !isSlipping && bananaImmunityTimer <= 0) {
+    const ppx = playerGroup.position.x, ppz = playerGroup.position.z;
+    for (let i = bananaPeels.length - 1; i >= 0; i--) {
+      const peel = bananaPeels[i];
+      if (Math.hypot(ppx - peel.x, ppz - peel.z) < PEEL_PICKUP_R) {
+        // Slip!
+        isSlipping = true;
+        slipTimer = 0.65;
+        velX = Math.sin(playerGroup.rotation.y) * BANANA_SLIDE_FORCE;
+        velZ = Math.cos(playerGroup.rotation.y) * BANANA_SLIDE_FORCE;
+        window.SFX?.bananaSlip();
+        sendPeel?.({ act: 'slip', id: peel.id });
+        removePeelById(peel.id);
+        break;
+      }
+    }
+  }
 
   // --- Peer interpolation & limb animation ---
   for (const peer of peers.values()) {
