@@ -565,5 +565,39 @@
     o2.start(t); o2.stop(t + 0.12);
   }
 
-  window.SFX = { punch, swordHit, gloveHit, batNormal, batHomeRun, shieldBlock, shieldBreak, itemBreak, pickup, die, respawn, ghostPunch, swordSwing, gloveSwing, batSwing, rocketBoost, bananaPlace, bananaSlip, windGust, goblinDrop };
+  // ── LAVA BURN — sizzle + low rumble when touching lava ──────────
+  function lavaBurn() {
+    ensureCtx(); resume();
+    const t = ctx.currentTime;
+    // Sizzle burst — broadband noise through a bandpass sweep
+    const src = ctx.createBufferSource(); src.buffer = noise(0.55);
+    const bp  = ctx.createBiquadFilter(); bp.type = 'bandpass';
+    bp.frequency.setValueAtTime(1800, t);
+    bp.frequency.exponentialRampToValueAtTime(600, t + 0.5);
+    bp.Q.value = 1.2;
+    const g1  = ctx.createGain();
+    g1.gain.setValueAtTime(0.7, t);
+    g1.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
+    src.connect(bp); bp.connect(g1); g1.connect(master);
+    src.start(t); src.stop(t + 0.6);
+    // Deep rumble oscillator
+    const o  = ctx.createOscillator(); o.type = 'sawtooth';
+    o.frequency.setValueAtTime(90, t);
+    o.frequency.exponentialRampToValueAtTime(35, t + 0.45);
+    const g2 = ctx.createGain();
+    g2.gain.setValueAtTime(0.35, t);
+    g2.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+    o.connect(g2); g2.connect(master);
+    o.start(t); o.stop(t + 0.5);
+    // High crackle
+    const src2 = ctx.createBufferSource(); src2.buffer = noise(0.2);
+    const hp   = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 4000;
+    const g3   = ctx.createGain();
+    g3.gain.setValueAtTime(0.4, t + 0.05);
+    g3.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+    src2.connect(hp); hp.connect(g3); g3.connect(master);
+    src2.start(t + 0.05); src2.stop(t + 0.3);
+  }
+
+  window.SFX = { punch, swordHit, gloveHit, batNormal, batHomeRun, shieldBlock, shieldBreak, itemBreak, pickup, die, respawn, ghostPunch, swordSwing, gloveSwing, batSwing, rocketBoost, bananaPlace, bananaSlip, windGust, goblinDrop, lavaBurn };
 })();

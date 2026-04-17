@@ -1991,6 +1991,7 @@ let hasFallenOff  = false; // true once player drops below platform surface — 
 let isDead        = false;
 let deathTimer    = 0;
 let homeRunDeath  = false; // true when death was caused by a home-run bat hit
+let burnDeath     = false; // true when death was caused by lava
 let spawnImmunityTimer = 0; // >0 = immune to knockback and death after respawning
 let punchTimer  = 0; // >0 while punch animation playing
 let sendPunch   = null;
@@ -2023,7 +2024,22 @@ const EVENT_ANNOUNCE_S      = 5;
 const RAIN_BANANAS_DURATION = 25;
 const fallingBananas        = [];   // { group, x, z, velY, peelId, rotVX, rotVZ }
 let eventCount              = 0;    // increments each time an event ends (for cycling)
-const EVENT_TYPES           = ['loot_goblin', 'clouds_alive', 'rain_bananas'];
+const EVENT_TYPES           = ['loot_goblin', 'clouds_alive', 'rain_bananas', 'lava_floor'];
+
+// --- Lava Floor event constants ---
+const LAVA_RISE_TIME     = 8.0;   // seconds lava takes to reach tile surface
+const LAVA_HOLD_TIME     = 5.0;   // seconds lava stays at peak before event ends
+const LAVA_START_Y       = -5.0;  // Y where lava begins (below tiles)
+const LAVA_PEAK_Y        = 0.22;  // Y at full rise (just above tile tops ~0.025)
+const LAVA_KILL_PROGRESS = 0.88;  // fraction of rise at which standing on ground = death
+
+// --- Lava Floor event state ---
+let lavaGroup             = null;
+let lavaSurface           = null;  // the glowing plane mesh
+let lavaLight             = null;  // point light for ambient glow
+let lavaProgress          = 0;
+let lavaEventElapsed      = 0;
+let lavaSavedTileTimeLeft = 0;     // remaining tile-drop time saved across the freeze
 
 // --- Cloud event constants ---
 const CLOUD_ORBIT_R      = 32;   // radius of cloud orbit around arena
@@ -2255,8 +2271,9 @@ function die(opts = {}) {
   dropItemsOnDeath();
   isDead = true;
   homeRunDeath = !!opts.homeRun;
+  burnDeath    = !!opts.burn;
   deathTimer = homeRunDeath ? 4.0 : 2.0;
-  window.SFX?.die();
+  if (burnDeath) window.SFX?.lavaBurn(); else window.SFX?.die();
   if (!homeRunDeath) {
     velY = 0; velX = 0; velZ = 0; windVelX = 0; windVelZ = 0;
     hasFallenOff = true; // prevent physics re-landing
@@ -2279,7 +2296,8 @@ function die(opts = {}) {
     updateLivesHUD();
   }
   if (deathEl) {
-    if (deathMsgSpan) deathMsgSpan.textContent = homeRunDeath ? '⚾ HOME RUN!' : 'YOU FELL';
+    deathEl.classList.toggle('burn', burnDeath);
+    if (deathMsgSpan) deathMsgSpan.textContent = homeRunDeath ? '⚾ HOME RUN!' : burnDeath ? '🔥 YOU BURNED' : 'YOU FELL';
     if (deathMsgSub)  deathMsgSub.textContent  = 'respawning…';
     deathEl.style.display = 'flex';
   }
@@ -2296,6 +2314,8 @@ function respawn() {
   isDead = false;
   hasFallenOff = false;
   homeRunDeath = false;
+  burnDeath    = false;
+  if (deathEl) deathEl.classList.remove('burn');
   window.SFX?.respawn();
   if (gameState === 'playing' && localLives <= 0) {
     enterGhostMode();
@@ -2389,9 +2409,9 @@ function returnToLobby() {
   eventCount = 0;
   for (const fb of fallingBananas) scene.remove(fb.group);
   fallingBananas.length = 0;
-  despawnCloud();
-  despawnGoblin();
+  despawnCloud(); despawnGoblin(); despawnLava();
   clearWindStreaks();
+  lavaSavedTileTimeLeft = 0;
   hideEventAnnouncement();
   // Move player to lobby
   playerGroup.position.set(0, 1, 0);
@@ -2424,6 +2444,7 @@ function startGame(seed, broadcast) {
   slipTimer           = 0;
   bananaImmunityTimer = 0;
   spawnImmunityTimer  = 0;
+  burnDeath           = false;
   hasBanana = false; bananaDurability = 0; playerBanana.visible = false;
   for (const p of bananaPeels) scene.remove(p.group);
   bananaPeels.length = 0;
@@ -2442,9 +2463,9 @@ function startGame(seed, broadcast) {
   for (const fb of fallingBananas) scene.remove(fb.group);
   fallingBananas.length = 0;
   eventCount = 0;
-  despawnCloud();
-  despawnGoblin();
+  despawnCloud(); despawnGoblin(); despawnLava();
   clearWindStreaks();
+  lavaSavedTileTimeLeft = 0;
   hideEventAnnouncement();
   window.GameMusic?.stop();
   window.MenuMusic?.duck(MUSIC_GAME_MULT);
@@ -2573,6 +2594,10 @@ const EVENT_INFO = {
     name: '☁️ The Clouds are alive...',
     sub:  'Something is watching. Something is breathing.',
   },
+  lava_floor: {
+    name: '🌋 The Floor is Lava!',
+    sub:  'Lava is rising — stay off the ground or burn!',
+  },
 };
 
 function showEventAnnouncement(type) {
@@ -2587,6 +2612,86 @@ function showEventAnnouncement(type) {
 function hideEventAnnouncement() {
   if (!eventAnnouncementEl) return;
   eventAnnouncementEl.classList.remove('visible');
+}
+
+// ── Lava Floor helpers ──────────────────────────────────────────────────────
+function spawnLava() {
+  lavaGroup = new THREE.Group();
+
+  // Glowing lava surface — flat plane covering the full platform
+  const lavaMat = new THREE.MeshStandardMaterial({
+    color:             0xff2200,
+    emissive:          new THREE.Color(0xff5500),
+    emissiveIntensity: 1.4,
+    roughness:         0.80,
+    metalness:         0.0,
+  });
+  lavaSurface = new THREE.Mesh(
+    new THREE.PlaneGeometry(PLATFORM_HALF * 2, PLATFORM_HALF * 2, 6, 6),
+    lavaMat
+  );
+  lavaSurface.rotation.x = -Math.PI / 2;
+  lavaGroup.add(lavaSurface);
+
+  // Brighter inner hot-spot plane (slightly smaller, more orange)
+  const hotMat = new THREE.MeshStandardMaterial({
+    color:             0xff6600,
+    emissive:          new THREE.Color(0xff8800),
+    emissiveIntensity: 1.8,
+    roughness:         0.75,
+    metalness:         0.0,
+    transparent:       true,
+    opacity:           0.55,
+  });
+  const hot = new THREE.Mesh(
+    new THREE.PlaneGeometry(PLATFORM_HALF * 1.2, PLATFORM_HALF * 1.2),
+    hotMat
+  );
+  hot.rotation.x = -Math.PI / 2;
+  hot.position.y = 0.01; // just above lava surface to avoid z-fight
+  lavaGroup.add(hot);
+
+  // Point light — dyes the underside of the scene red/orange
+  lavaLight = new THREE.PointLight(0xff4400, 4, PLATFORM_HALF * 2.5);
+  lavaLight.position.set(0, 1, 0);
+  lavaGroup.add(lavaLight);
+
+  lavaGroup.position.y = LAVA_START_Y;
+  scene.add(lavaGroup);
+}
+
+function despawnLava() {
+  if (!lavaGroup) return;
+  scene.remove(lavaGroup);
+  lavaGroup = null; lavaSurface = null; lavaLight = null;
+}
+
+function updateLavaEvent(dt) {
+  if (!lavaGroup) return;
+  lavaEventElapsed += dt;
+
+  // Rise phase
+  lavaProgress = Math.min(1, lavaEventElapsed / LAVA_RISE_TIME);
+  lavaGroup.position.y = LAVA_START_Y + (LAVA_PEAK_Y - LAVA_START_Y) * lavaProgress;
+
+  // Animate emissive intensity — pulsing glow simulates flowing lava
+  if (lavaSurface) {
+    const pulse = 1.1 + Math.sin(lavaEventElapsed * 2.8) * 0.3 + Math.sin(lavaEventElapsed * 6.3) * 0.12;
+    lavaSurface.material.emissiveIntensity = pulse;
+  }
+  if (lavaLight) {
+    lavaLight.intensity = 3.5 + Math.sin(lavaEventElapsed * 3.1) * 1.0;
+  }
+
+  // Kill check — once lava is near the tile surface, standing on the ground is fatal
+  if (!isDead && !isGhost && onGround && lavaProgress >= LAVA_KILL_PROGRESS) {
+    die({ burn: true });
+  }
+
+  // End event after rise + hold
+  if (lavaEventElapsed >= LAVA_RISE_TIME + LAVA_HOLD_TIME) {
+    endEvent();
+  }
 }
 
 // Called independently on every client at the same deterministic game-time.
@@ -2629,6 +2734,14 @@ function beginEvent() {
     cloudSubState    = 'circling';
     cloudCircleTimer = cloudSchedule[0];
     spawnCloud();
+  } else if (eventType === 'lava_floor') {
+    eventTimer            = LAVA_RISE_TIME + LAVA_HOLD_TIME + 5; // safety cap
+    lavaEventElapsed      = 0;
+    lavaProgress          = 0;
+    // Freeze tile dropping for the duration — save remaining time so it can resume
+    lavaSavedTileTimeLeft = Math.max(3, nextTileTime - gameTime);
+    nextTileTime          = Infinity;
+    spawnLava();
   }
 }
 
@@ -2637,9 +2750,15 @@ function endEvent() {
   eventState = 'idle';
   eventType  = null;
   eventCount++;
-  // Cloud cleanup
+  // Per-event cleanup
   despawnCloud();
   clearWindStreaks();
+  despawnLava();
+  // Restore tile dropping if lava froze it
+  if (lavaSavedTileTimeLeft > 0) {
+    nextTileTime          = gameTime + lavaSavedTileTimeLeft;
+    lavaSavedTileTimeLeft = 0;
+  }
   // Deterministic gap until next event — same result on every client
   const t = Math.round(gameTime);
   let s = (_gameSeed ^ (t * 0x9e3779b9 + eventCount)) >>> 0;
@@ -3357,6 +3476,8 @@ function loop(now) {
         updateCloudEvent(dt);
       } else if (eventType === 'loot_goblin') {
         updateGoblinEvent(dt);
+      } else if (eventType === 'lava_floor') {
+        updateLavaEvent(dt);
       }
       if (eventTimer <= 0 && eventState === 'running') endEvent();
     }
