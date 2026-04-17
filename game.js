@@ -177,138 +177,198 @@ function rebuildArena(seed) {
     elevatedPlatforms.push({ x, z, hw, hd, topY, angle });
   }
 
-  // ── Structure builders ────────────────────────────────────────────
+  // ── Structure builders (toy theme — giant real-world objects) ────────
 
-  function spawnPillar(x, z) {
-    const h = 3 + rand() * 7, w = 0.7 + rand() * 1.8;
-    const hue = rand();
-    const shape = Math.floor(rand() * 3);
-    let geo;
-    if      (shape === 0) geo = new THREE.BoxGeometry(w, h, w);
-    else if (shape === 1) geo = new THREE.CylinderGeometry(w/2, w/2, h, 6);
-    else                  geo = new THREE.CylinderGeometry(w/2, w*0.7, h, 8);
-    addMesh(geo, mat(hue), x, h/2, z);
-    addGlow(x, h + 0.5, z, hue);
-    addPillarCol(x, z, w/2, h);
-    occupied.push({ x, z, r: w/2 + 0.5 });
+  function mkM(color, roughness = 0.75, metalness = 0.0) {
+    return new THREE.MeshStandardMaterial({ color, roughness, metalness });
   }
 
-function spawnArch(x, z) {
-    const hue = rand();
-    const legH = 3.5 + rand() * 3, legW = 0.9;
-    const span = 5.0 + rand() * 3;
-    const angle = rand() * Math.PI;
-    const dx = Math.cos(angle) * span/2, dz = Math.sin(angle) * span/2;
-    // Two legs
-    addMesh(new THREE.BoxGeometry(legW, legH, legW), mat(hue), x + dx, legH/2, z + dz);
-    addPillarCol(x + dx, z + dz, legW/2, legH);
-    addMesh(new THREE.BoxGeometry(legW, legH, legW), mat(hue), x - dx, legH/2, z - dz);
-    addPillarCol(x - dx, z - dz, legW/2, legH);
-    // Keystone beam
-    const beamLen = span + legW;
-    const beamMesh = addMesh(new THREE.BoxGeometry(beamLen, legW * 0.8, legW * 0.8), mat(hue, 0.32), x, legH, z, angle);
-    addGlow(x, legH + 1, z, hue, 0.7, 6);
-    occupied.push({ x, z, r: span/2 + 1 });
-  }
-
-  function spawnStaircase(x, z) {
-    const hue = rand();
-    const angle = rand() * Math.PI * 2;
-    const stepW = 3.2 + rand() * 1.5, stepD = 1.9;
-    const steps = 3;
-    for (let s = 0; s < steps; s++) {
-      const sh = 0.8 + s * 1.0;
-      const ox = Math.cos(angle) * stepD * (s - 1);
-      const oz = Math.sin(angle) * stepD * (s - 1);
-      addMesh(new THREE.BoxGeometry(stepW, sh, stepD), mat(hue, 0.2 + s * 0.05), x + ox, sh/2, z + oz);
-      // each step is walkable
-      const hw = stepW/2, hd = stepD/2;
-      const rx = Math.cos(angle), rz = Math.sin(angle);
-      addEP(x + ox, z + oz, hw, hd, sh);
+  // ── Chair ──────────────────────────────────────────────────────────
+  function spawnChair(x, z) {
+    const ang = Math.floor(rand() * 4) * (Math.PI / 2);
+    const ca = Math.cos(ang), sa = Math.sin(ang);
+    function rp(ox, oz) { return [x + ox*ca - oz*sa, z + ox*sa + oz*ca]; }
+    const WOOD = mkM(0x8B5432, 0.82), DARK = mkM(0x6B3C1C, 0.88);
+    const LEG_H = 4.0, LEG_R = 0.22, SW = 5.5, SD = 5.5, ST = 0.45;
+    const SEAT_TOP = LEG_H + ST, BH = 5.0, BT = 0.45, BACK_TOP = SEAT_TOP + BH;
+    // 4 turned legs
+    for (const [ox, oz] of [[2.0,2.0],[-2.0,2.0],[2.0,-2.0],[-2.0,-2.0]]) {
+      const [lx,lz] = rp(ox, oz);
+      addMesh(new THREE.CylinderGeometry(LEG_R, LEG_R*1.15, LEG_H, 8), WOOD, lx, LEG_H/2, lz);
+      addPillarCol(lx, lz, LEG_R+0.18, LEG_H);
     }
-    addGlow(x, 2.5, z, hue, 0.6, 5);
-    occupied.push({ x, z, r: stepD * steps * 0.6 });
+    // Cross-braces
+    addMesh(new THREE.BoxGeometry(SW-0.4, 0.2, 0.22), DARK, x, LEG_H*0.42, z, ang);
+    addMesh(new THREE.BoxGeometry(0.22, 0.2, SD-0.4), DARK, x, LEG_H*0.42, z, ang);
+    // Seat board
+    addMesh(new THREE.BoxGeometry(SW, ST, SD), WOOD, x, SEAT_TOP-ST/2, z, ang);
+    addEP(x, z, SW/2, SD/2, SEAT_TOP, ang);
+    // Back rest
+    const [bx,bz] = rp(0, SD/2-BT/2);
+    addMesh(new THREE.BoxGeometry(SW, BH, BT), WOOD, bx, SEAT_TOP+BH/2, bz, ang);
+    addEP(bx, bz, SW/2, BT/2+0.15, BACK_TOP, ang);
+    // Decorative horizontal slats
+    for (let s = 0; s < 3; s++)
+      addMesh(new THREE.BoxGeometry(SW-0.4, 0.28, 0.28), DARK, bx, SEAT_TOP+BH*(0.2+s*0.3), bz, ang);
+    occupied.push({ x, z, r: SW/2+0.8 });
   }
 
-function spawnRuinCluster(x, z) {
-    const hue = rand();
-    const count = 2 + Math.floor(rand() * 3);
-    const baseAngle = rand() * Math.PI * 2;
-    for (let i = 0; i < count; i++) {
-      const a = baseAngle + (i / count) * Math.PI * 2;
-      const dist = 1.5 + rand() * 1.2;
-      const rx = x + Math.cos(a) * dist, rz = z + Math.sin(a) * dist;
-      const ph = 1.5 + rand() * 5.0, pw = 0.5 + rand() * 0.9;
-      addMesh(new THREE.CylinderGeometry(pw/2, pw/2, ph, 7), mat(hue, 0.15 + rand() * 0.1), rx, ph/2, rz);
-      addPillarCol(rx, rz, pw/2, ph);
+  // ── Toy Blocks ─────────────────────────────────────────────────────
+  function spawnToyBlocks(x, z) {
+    const BCOLORS = [0xE53935,0x1E88E5,0xF9A825,0x43A047,0xAB47BC,0xFF7043];
+    const BS = 3.4, n = 1 + Math.floor(rand()*3);
+    let curY = 0;
+    for (let i = 0; i < n; i++) {
+      const col = BCOLORS[Math.floor(rand()*BCOLORS.length)];
+      const ox = i===0 ? 0 : (rand()-0.5)*0.5, oz = i===0 ? 0 : (rand()-0.5)*0.5;
+      const ry = (rand()-0.5)*0.3;
+      const wx = x+ox, wz = z+oz, cy = curY+BS/2;
+      addMesh(new THREE.BoxGeometry(BS, BS, BS), mkM(col, 0.5), wx, cy, wz, ry);
+      // White letter tile on front face
+      addMesh(new THREE.BoxGeometry(BS*0.55, BS*0.55, 0.09), mkM(0xFFFFFF, 0.35), wx, cy, wz+BS/2+0.04, ry);
+      // Dot on top
+      addMesh(new THREE.CylinderGeometry(0.35, 0.35, 0.1, 10), mkM(0xFFFFFF, 0.35), wx, curY+BS+0.05, wz);
+      addEP(wx, wz, BS/2-0.08, BS/2-0.08, curY+BS, ry);
+      curY += BS;
     }
-    addGlow(x, 2, z, hue, 0.5, 6);
-    occupied.push({ x, z, r: 2.5 });
+    addPillarCol(x, z, BS/2+0.05, curY);
+    occupied.push({ x, z, r: BS/2+0.65 });
   }
 
-  function spawnObelisk(x, z) {
-    const hue = rand();
-    const h = 6 + rand() * 6, w = 0.7 + rand() * 0.8;
-    // Tapered shaft
-    addMesh(new THREE.CylinderGeometry(w * 0.15, w * 0.5, h, 4), mat(hue, 0.28), x, h/2, z, rand() * Math.PI);
-    // Pyramid tip
-    addMesh(new THREE.ConeGeometry(w * 0.15, h * 0.18, 4), mat(hue, 0.5, 0.9), x, h + (h * 0.09), z, rand() * Math.PI);
-    addGlow(x, h + 0.5, z, hue, 1.4, 9);
-    addPillarCol(x, z, w * 0.4, h);
-    occupied.push({ x, z, r: w * 0.5 + 0.5 });
+  // ── Cardboard Box ──────────────────────────────────────────────────
+  function spawnBox(x, z) {
+    const ang = Math.floor(rand()*4)*(Math.PI/2);
+    const W = 5.0+rand()*2.5, H = 3.5+rand()*2.5, D = 5.0+rand()*2.5;
+    const bMat = mkM(0xC88C40, 0.95), dMat = mkM(0x9A6820, 0.97), tMat = mkM(0xE8B84B, 0.65);
+    addMesh(new THREE.BoxGeometry(W, H, D), bMat, x, H/2, z, ang);
+    // Crease lines
+    addMesh(new THREE.BoxGeometry(W+0.06, 0.13, 0.13), dMat, x, H*0.5, z, ang);
+    addMesh(new THREE.BoxGeometry(0.13, 0.13, D+0.06), dMat, x, H*0.5, z, ang);
+    addMesh(new THREE.BoxGeometry(W+0.06, 0.13, 0.13), dMat, x, H*0.22, z, ang);
+    addMesh(new THREE.BoxGeometry(0.13, 0.13, D+0.06), dMat, x, H*0.22, z, ang);
+    // Tape cross on top
+    addMesh(new THREE.BoxGeometry(W*0.88, 0.08, 0.26), tMat, x, H+0.04, z, ang);
+    addMesh(new THREE.BoxGeometry(0.26, 0.08, D*0.88), tMat, x, H+0.04, z, ang);
+    addEP(x, z, W/2, D/2, H, ang);
+    occupied.push({ x, z, r: Math.max(W,D)/2+0.5 });
   }
 
-  function spawnCrystalCluster(x, z) {
-    const hue = rand();
-    const count = 3 + Math.floor(rand() * 4);
-    for (let i = 0; i < count; i++) {
-      const a = (i / count) * Math.PI * 2 + rand() * 0.5;
-      const dist = rand() * 1.8;
-      const cx = x + Math.cos(a) * dist, cz = z + Math.sin(a) * dist;
-      const ch = 1.5 + rand() * 3.5, cw = 0.3 + rand() * 0.55;
-      const m = addMesh(new THREE.ConeGeometry(cw, ch, 5), mat(hue, 0.35, 0.9), cx, ch/2, cz);
-      m.rotation.z = (rand() * 0.24 - 0.12); // subtle cosmetic lean only (max ~7°)
-      m.rotation.y = rand() * Math.PI * 2;
-      addPillarCol(cx, cz, cw, ch);
+  // ── Desk Lamp ──────────────────────────────────────────────────────
+  function spawnLamp(x, z) {
+    const mMat = mkM(0x9E9E9E, 0.3, 0.65);
+    const sMat = new THREE.MeshStandardMaterial({ color: 0x2E7D32, roughness: 0.55, side: THREE.DoubleSide });
+    const bMat = new THREE.MeshStandardMaterial({ color: 0xFFFDE7, roughness: 0.15, emissive: new THREE.Color(0xFFEB3B), emissiveIntensity: 1.8 });
+    // Weighted base
+    addMesh(new THREE.CylinderGeometry(2.2, 2.6, 0.55, 18), mMat, x, 0.275, z);
+    addEP(x, z, 2.0, 2.0, 0.55);
+    // Pole
+    addMesh(new THREE.CylinderGeometry(0.22, 0.22, 8.5, 8), mMat, x, 4.8, z);
+    addPillarCol(x, z, 0.42, 9.05);
+    // Knuckle joint
+    addMesh(new THREE.SphereGeometry(0.42, 10, 8), mMat, x, 9.3, z);
+    // Open shade cone (DoubleSide shows inside)
+    addMesh(new THREE.ConeGeometry(2.5, 2.9, 20, 1, true), sMat, x, 10.6, z);
+    // Bulb
+    addMesh(new THREE.SphereGeometry(0.58, 10, 8), bMat, x, 9.7, z);
+    addGlow(x, 9.7, z, 0.13, 2.8, 18);
+    occupied.push({ x, z, r: 2.6 });
+  }
+
+  // ── Battery ────────────────────────────────────────────────────────
+  function spawnBattery(x, z) {
+    const BR = 1.8, BH = 9.0;
+    addMesh(new THREE.CylinderGeometry(BR, BR, BH, 20),           mkM(0x388E3C,0.4,0.3),  x, BH/2, z);
+    addMesh(new THREE.CylinderGeometry(BR+0.05,BR+0.05,BH*0.42,20), mkM(0x66BB6A,0.55),  x, BH*0.40, z);
+    addMesh(new THREE.CylinderGeometry(BR+0.06,BR+0.06,0.24,20),  mkM(0xFFD54F,0.5),     x, BH*0.64, z);
+    addMesh(new THREE.CylinderGeometry(BR+0.06,BR+0.06,0.30,20),  mkM(0xBDBDBD,0.25,0.75), x, 0.15, z);
+    addMesh(new THREE.CylinderGeometry(BR+0.06,BR+0.06,0.40,20),  mkM(0xBDBDBD,0.25,0.75), x, BH+0.20, z);
+    addMesh(new THREE.CylinderGeometry(0.52,0.52,0.50,12),        mkM(0xBDBDBD,0.25,0.75), x, BH+0.65, z);
+    addPillarCol(x, z, BR+0.15, BH+0.85);
+    addGlow(x, BH+1.0, z, 0.35, 0.6, 8);
+    occupied.push({ x, z, r: BR+0.8 });
+  }
+
+  // ── Computer Monitor ───────────────────────────────────────────────
+  function spawnMonitor(x, z) {
+    const ang = Math.floor(rand()*4)*(Math.PI/2);
+    const sMat = new THREE.MeshStandardMaterial({ color:0x0D47A1, roughness:0.15, emissive:new THREE.Color(0x1565C0), emissiveIntensity:0.6 });
+    const SW=8.5, SH=5.5, SD=1.2, NH=3.2, BH2=0.5;
+    const SCR_Y = BH2+NH+SH/2;
+    addMesh(new THREE.BoxGeometry(4.5,BH2,3.0),          mkM(0x424242,0.7,0.2), x, BH2/2, z);
+    addEP(x, z, 2.25, 1.5, BH2);
+    addMesh(new THREE.BoxGeometry(0.7,NH,1.0),            mkM(0x424242,0.7,0.2), x, BH2+NH/2, z);
+    addPillarCol(x, z, 0.65, BH2+NH);
+    addMesh(new THREE.BoxGeometry(SW+0.6,SH+0.6,SD),     mkM(0x212121,0.6,0.3), x, SCR_Y, z, ang);
+    addMesh(new THREE.BoxGeometry(SW,SH,0.12),            sMat,                  x, SCR_Y, z, ang);
+    addEP(x, z, (SW+0.6)/2, SD/2+0.1, SCR_Y+SH/2+0.3, ang);
+    addGlow(x, SCR_Y, z, 0.65, 0.9, 12);
+    occupied.push({ x, z, r: (SW+0.6)/2+0.5 });
+  }
+
+  // ── Coffee Mug ─────────────────────────────────────────────────────
+  function spawnMug(x, z) {
+    const hue = [0.0,0.55,0.08,0.7,0.33][Math.floor(rand()*5)];
+    const mHex = new THREE.Color().setHSL(hue,0.7,0.45).getHex();
+    const sHex = new THREE.Color().setHSL(hue,0.9,0.30).getHex();
+    const MRT=2.3, MRB=2.0, MH=4.5;
+    addMesh(new THREE.CylinderGeometry(MRT,MRB,MH,20),         mkM(mHex,0.6),       x, MH/2, z);
+    addMesh(new THREE.CylinderGeometry(MRT-0.18,MRB-0.18,MH-0.25,20), mkM(0xF5F5F5,0.5), x, MH/2+0.12, z);
+    addMesh(new THREE.CylinderGeometry(MRT+0.06,MRT+0.06,0.16,20), mkM(mHex,0.6),   x, MH+0.08, z);
+    addMesh(new THREE.CylinderGeometry(MRT+0.07,MRT+0.07,0.45,20), mkM(sHex,0.5),   x, MH*0.55, z);
+    // C-shaped handle
+    const HX = x+MRT+1.0;
+    addMesh(new THREE.BoxGeometry(0.38,MH*0.46,0.38), mkM(mHex,0.6), HX, MH*0.50, z);
+    addMesh(new THREE.BoxGeometry(1.1,0.38,0.38),     mkM(mHex,0.6), x+MRT+0.45, MH*0.72, z);
+    addMesh(new THREE.BoxGeometry(1.1,0.38,0.38),     mkM(mHex,0.6), x+MRT+0.45, MH*0.28, z);
+    addPillarCol(x, z, MRT+0.12, MH+0.16);
+    addEP(x, z, MRT*0.75, MRT*0.75, MH+0.16);
+    addGlow(x, MH+0.6, z, hue, 0.5, 7);
+    occupied.push({ x, z, r: MRT+1.5 });
+  }
+
+  // ── Crayons ────────────────────────────────────────────────────────
+  function spawnCrayons(x, z) {
+    const CCOLORS=[0xE53935,0x1E88E5,0xF9A825,0x43A047,0xFF7043,0xAB47BC];
+    const n=3+Math.floor(rand()*3), CR=0.54, CH=7.5, TH=1.3;
+    const tipMat = mkM(0xFFF9C4, 0.45);
+    for (let i = 0; i < n; i++) {
+      const a=i/n*Math.PI*2+rand()*0.5, dist=0.55+rand()*0.9;
+      const cx=x+Math.cos(a)*dist, cz=z+Math.sin(a)*dist;
+      const col=CCOLORS[i%CCOLORS.length];
+      // Body with slight lean
+      const body=new THREE.Mesh(new THREE.CylinderGeometry(CR,CR,CH,10), mkM(col,0.5));
+      body.position.set(cx,CH/2,cz); body.rotation.z=(rand()-0.5)*0.18;
+      body.castShadow=true; scene.add(body); pillarMeshes.push(body);
+      // White label band
+      const wrap=new THREE.Mesh(new THREE.CylinderGeometry(CR+0.03,CR+0.03,CH*0.35,10), mkM(0xFAFAFA,0.4));
+      wrap.position.set(cx,CH*0.45,cz); scene.add(wrap); pillarMeshes.push(wrap);
+      // Pointed tip
+      const tip=new THREE.Mesh(new THREE.ConeGeometry(CR,TH,10), tipMat);
+      tip.position.set(cx,CH+TH/2,cz); scene.add(tip); pillarMeshes.push(tip);
+      addPillarCol(cx, cz, CR+0.15, CH+TH);
     }
-    addGlow(x, 1.5, z, hue, 1.6, 7);
-    occupied.push({ x, z, r: 2 });
+    addGlow(x, CH+1.5, z, rand(), 0.6, 8);
+    occupied.push({ x, z, r: 2.2 });
   }
 
-  function spawnMonument(x, z) {
-    const hue = rand();
-    const baseW = 5.0 + rand() * 3, baseH = 1.0 + rand() * 0.8;
-    const towerH = 4 + rand() * 4, towerW = 1.0;
-    // Wide base pedestal
-    addMesh(new THREE.BoxGeometry(baseW, baseH, baseW), mat(hue, 0.18), x, baseH/2, z);
-    addEP(x, z, baseW/2, baseW/2, baseH);
-    // Tower on top
-    addMesh(new THREE.BoxGeometry(towerW, towerH, towerW), mat(hue, 0.28), x, baseH + towerH/2, z);
-    addPillarCol(x, z, towerW/2, baseH + towerH);
-    // Cap
-    addMesh(new THREE.ConeGeometry(towerW * 0.8, 1.0, 4), mat(hue, 0.5), x, baseH + towerH + 0.5, z, Math.PI/4);
-    addGlow(x, baseH + towerH + 1.2, z, hue, 1.5, 10);
-    occupied.push({ x, z, r: baseW/2 });
-  }
-
-// ── Place structures ─────────────────────────────────────────────
-  const TYPES = ['pillar','pillar','arch','staircase','ruins','ruins','obelisk','crystal','monument','monument'];
-  const count = 14 + Math.floor(rand() * 7); // 14–20 structures
-
-  for (let i = 0; i < count; i++) {
-    const type = TYPES[Math.floor(rand() * TYPES.length)];
-    const margin = type === 'arch' || type === 'staircase' ? 7 : 5;
-    const footprint = type === 'monument' || type === 'arch' ? 4 : type === 'staircase' ? 3.5 : 2;
+  // ── Place structures ──────────────────────────────────────────────
+  const TYPES = ['chair','blocks','box','box','lamp','battery','monitor','mug','crayons'];
+  const nStructs = 9 + Math.floor(rand()*4);
+  for (let i = 0; i < nStructs; i++) {
+    const type      = TYPES[Math.floor(rand()*TYPES.length)];
+    const margin    = (type==='monitor'||type==='lamp') ? 7 : type==='chair' ? 6 : 5;
+    const footprint = type==='monitor' ? 5 : (type==='chair'||type==='lamp') ? 3 : 2.5;
     const pos = rndPos(margin, footprint);
     if (!pos) continue;
-    const { x, z } = pos;
-    if      (type === 'pillar')    spawnPillar(x, z);
-    else if (type === 'arch')      spawnArch(x, z);
-    else if (type === 'staircase') spawnStaircase(x, z);
-    else if (type === 'ruins')     spawnRuinCluster(x, z);
-    else if (type === 'obelisk')   spawnObelisk(x, z);
-    else if (type === 'crystal')   spawnCrystalCluster(x, z);
-    else if (type === 'monument')  spawnMonument(x, z);
+    const {x,z} = pos;
+    if      (type==='chair')   spawnChair(x,z);
+    else if (type==='blocks')  spawnToyBlocks(x,z);
+    else if (type==='box')     spawnBox(x,z);
+    else if (type==='lamp')    spawnLamp(x,z);
+    else if (type==='battery') spawnBattery(x,z);
+    else if (type==='monitor') spawnMonitor(x,z);
+    else if (type==='mug')     spawnMug(x,z);
+    else if (type==='crayons') spawnCrayons(x,z);
   }
 
   // --- Randomise tile base colour ---
