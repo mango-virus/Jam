@@ -1597,6 +1597,7 @@ function broadcastSelf() {
     isGhost,
     ready:    localReady,
     hasArmor,
+    bubble:   isBubbleTrapped,
   });
 }
 
@@ -1629,7 +1630,7 @@ function addPeer(id, data) {
   char.group.position.set(data.x ?? 0, 0, data.z ?? 0);
   char.group.rotation.y = data.rotY ?? 0;
   scene.add(char.group);
-  peers.set(id, { ...char, tx: data.x ?? 0, ty: data.y ?? 0, tz: data.z ?? 0, rotY: data.rotY ?? 0, moving: false, swing: 0, punchTimer: 0, blocking: false, username: data.username, redrawLabel, pSword: !!data.sword, pGlove: !!data.glove, pBat: !!data.bat, pBoots: !!data.boots, pShield: !!data.shield, pBanana: !!data.banana, pColor: data.color || 'ffffff', lives: data.lives ?? 3, isGhost: !!data.isGhost, hasArmor: !!data.hasArmor, ready: !!data.ready });
+  peers.set(id, { ...char, tx: data.x ?? 0, ty: data.y ?? 0, tz: data.z ?? 0, rotY: data.rotY ?? 0, moving: false, swing: 0, punchTimer: 0, blocking: false, username: data.username, redrawLabel, pSword: !!data.sword, pGlove: !!data.glove, pBat: !!data.bat, pBoots: !!data.boots, pShield: !!data.shield, pBanana: !!data.banana, pColor: data.color || 'ffffff', lives: data.lives ?? 3, isGhost: !!data.isGhost, hasArmor: !!data.hasArmor, ready: !!data.ready, pBubble: !!data.bubble, bubbleMesh: null });
   updateMenuReadyList();
 }
 
@@ -1656,7 +1657,11 @@ function applyPeerGhostMode(peer, ghost) {
 
 function removePeer(id) {
   const peer = peers.get(id);
-  if (peer) { scene.remove(peer.group); peers.delete(id); }
+  if (peer) {
+    if (peer.bubbleMesh) peer.group.remove(peer.bubbleMesh);
+    scene.remove(peer.group);
+    peers.delete(id);
+  }
   updateMenuReadyList();
   updatePeerLivesHUD();
 }
@@ -1823,6 +1828,18 @@ async function setupMultiplayer() {
         peer.hasArmor = !!data.hasArmor;
         if (peer.armorGroup) peer.armorGroup.visible = !!data.hasArmor && !data.isGhost;
         if (data.ready !== undefined) peer.ready = !!data.ready;
+        // Bubble trap visual sync
+        const nowBubble = !!data.bubble;
+        if (nowBubble !== peer.pBubble) {
+          peer.pBubble = nowBubble;
+          if (nowBubble && !peer.bubbleMesh) {
+            peer.bubbleMesh = makePlayerBubbleMesh();
+            peer.group.add(peer.bubbleMesh);
+          } else if (!nowBubble && peer.bubbleMesh) {
+            peer.group.remove(peer.bubbleMesh);
+            peer.bubbleMesh = null;
+          }
+        }
         if (gameState === 'lobby') updateMenuReadyList();
         if (gameState === 'playing') updatePeerLivesHUD();
       }
@@ -2063,7 +2080,7 @@ const EVENT_ANNOUNCE_LINGER = 5;    // extra seconds announcement stays up once 
 const RAIN_BANANAS_DURATION = 25;
 const fallingBananas        = [];   // { group, x, z, velY, peelId, rotVX, rotVZ }
 let eventCount              = 0;    // increments each time an event ends (for cycling)
-const EVENT_TYPES           = ['loot_goblin', 'clouds_alive', 'rain_bananas', 'lava_floor', 'hot_potato'];
+const EVENT_TYPES           = ['loot_goblin', 'clouds_alive', 'rain_bananas', 'lava_floor', 'hot_potato', 'gumball_cannon'];
 
 // --- Hot Potato event state ---
 let hotPotatoHolder    = null;   // 'local' | peer_id | null
@@ -2073,6 +2090,21 @@ let hotPotatoBomb      = null;   // { group, sphere, spark, light }
 let hotPotatoTickTimer = 0;      // time until next tick SFX
 let hotPotatoFlashOn   = false;  // toggles red/black on every tick
 const explosionEffects = [];     // [fn(dt)] transient explosion animations
+
+// --- Gumball Cannon event state ---
+let gumballMachineGroup  = null;
+let gumballFrozenTile    = null;  // tile protected from sinking
+let gumballFalling       = false;
+let gumballFallVelY      = 0;
+let gumballBubbles       = [];    // { group, x, y, z, velX, velY, velZ, life }
+let gumballSchedule      = [];
+let gumballSchedIdx      = 0;
+let gumballEventElapsed  = 0;
+let isBubbleTrapped      = false;
+let bubbleTrappedTimer   = 0;
+let bubbleDriftX         = 0;
+let bubbleDriftZ         = 0;
+let localBubbleMesh      = null;  // transparent sphere attached to playerGroup
 
 // --- Lava Floor event constants ---
 const LAVA_RISE_TIME  = 8.0;   // seconds lava takes to reach tile surface
@@ -2391,6 +2423,8 @@ function respawn() {
   onGround = false;
   spawnImmunityTimer = 2.0;
   if (deathEl) deathEl.style.display = 'none';
+  // Clear bubble trap if caught while respawning
+  if (isBubbleTrapped) popLocalBubble();
 }
 
 function checkWinCondition() {
@@ -2468,9 +2502,11 @@ function returnToLobby() {
   eventCount = 0;
   for (const fb of fallingBananas) scene.remove(fb.group);
   fallingBananas.length = 0;
-  despawnCloud(); despawnGoblin(); despawnLava(); despawnHotPotato();
+  despawnCloud(); despawnGoblin(); despawnLava(); despawnHotPotato(); despawnGumballMachine();
   clearWindStreaks();
   lavaSavedTileTimeLeft = 0;
+  isBubbleTrapped = false; bubbleTrappedTimer = 0;
+  if (localBubbleMesh) { playerGroup.remove(localBubbleMesh); localBubbleMesh = null; }
   hideEventAnnouncement();
   // Move player to lobby
   playerGroup.position.set(0, 1, 0);
@@ -2511,6 +2547,9 @@ function startGame(seed, broadcast) {
   ghostPunchCooldown = 0;
   lastHitBy  = null;
   despawnHotPotato();
+  despawnGumballMachine();
+  isBubbleTrapped = false; bubbleTrappedTimer = 0;
+  if (localBubbleMesh) { playerGroup.remove(localBubbleMesh); localBubbleMesh = null; }
   explosionEffects.length = 0;
   // Reset random events — deterministic so every client fires at the same time
   _gameSeed = seed;
@@ -2525,9 +2564,11 @@ function startGame(seed, broadcast) {
   for (const fb of fallingBananas) scene.remove(fb.group);
   fallingBananas.length = 0;
   eventCount = 0;
-  despawnCloud(); despawnGoblin(); despawnLava(); despawnHotPotato();
+  despawnCloud(); despawnGoblin(); despawnLava(); despawnHotPotato(); despawnGumballMachine();
   clearWindStreaks();
   lavaSavedTileTimeLeft = 0;
+  isBubbleTrapped = false; bubbleTrappedTimer = 0;
+  if (localBubbleMesh) { playerGroup.remove(localBubbleMesh); localBubbleMesh = null; }
   hideEventAnnouncement();
   window.GameMusic?.stop();
   window.MenuMusic?.duck(MUSIC_GAME_MULT);
@@ -2669,6 +2710,10 @@ const EVENT_INFO = {
   hot_potato: {
     name: '🥔 Hot Potato!',
     sub:  'Someone is holding a bomb — hit a player to pass it before it explodes!',
+  },
+  gumball_cannon: {
+    name: '🍬 Gumball Cannon!',
+    sub:  'A gumball machine has landed! Giant bubbles will trap you and send you floating!',
   },
 };
 
@@ -2910,6 +2955,245 @@ function despawnHotPotato() {
   hotPotatoHolder = null;
 }
 
+// ── GUMBALL CANNON ─────────────────────────────────────────────────────────
+
+const BUBBLE_COLORS = [0xff55aa, 0x55aaff, 0x55ee99, 0xff7722, 0xcc55ff];
+const BUBBLE_RADIUS = 0.50; // world bubble collision radius
+
+function generateGumballSchedule() {
+  const shots = [];
+  let t = 2.0; // first shot fires 2s after machine lands
+  let s = (_gameSeed ^ (0xcafe0000 + eventCount * 0x6789)) >>> 0;
+  while (t < 82) {
+    s = (Math.imul(s, 1664525) + 1013904223) | 0;
+    t += 1.2 + ((s >>> 0) / 0x100000000) * 2.4;
+    s = (Math.imul(s, 1664525) + 1013904223) | 0;
+    const angle    = ((s >>> 0) / 0x100000000) * Math.PI * 2;
+    s = (Math.imul(s, 1664525) + 1013904223) | 0;
+    const speed    = 5 + ((s >>> 0) / 0x100000000) * 4;
+    s = (Math.imul(s, 1664525) + 1013904223) | 0;
+    const colorIdx = (s >>> 0) % BUBBLE_COLORS.length;
+    shots.push({ t, angle, speed, colorIdx });
+  }
+  return shots;
+}
+
+function makeGumballMachine() {
+  const g = new THREE.Group();
+  const red    = new THREE.MeshStandardMaterial({ color: 0xcc1515, metalness: 0.35, roughness: 0.6 });
+  const chrome = new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.88, roughness: 0.18 });
+  const glass  = new THREE.MeshStandardMaterial({ color: 0xaaddff, metalness: 0.05, roughness: 0.04, transparent: true, opacity: 0.38 });
+  const dark   = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 });
+
+  // Base disc — y: 0 → 0.14, centre 0.07
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.40, 0.44, 0.14, 14), red);
+  base.position.y = 0.07; g.add(base);
+
+  // Stem — y: 0.14 → 0.46, centre 0.30
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.13, 0.32, 10), chrome);
+  stem.position.y = 0.30; g.add(stem);
+
+  // Lower chrome ring — y: 0.46 → 0.52, centre 0.49
+  const ringLo = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.06, 12), chrome);
+  ringLo.position.y = 0.49; g.add(ringLo);
+
+  // Body — y: 0.52 → 0.76, centre 0.64
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.24, 12), red);
+  body.position.y = 0.64; g.add(body);
+
+  // Coin slot on body front
+  const slot = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.04, 0.02), dark);
+  slot.position.set(0, 0.60, 0.26); g.add(slot);
+
+  // Nozzle group — pivot at body surface
+  const nozzleGrp = new THREE.Group();
+  nozzleGrp.position.set(0.26, 0.64, 0); g.add(nozzleGrp);
+  const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.065, 0.20, 8), chrome);
+  nozzle.rotation.z = Math.PI / 2;
+  nozzle.position.set(0.10, 0, 0); // centre at x=0.10, left end flush with body
+  nozzleGrp.add(nozzle);
+
+  // Upper chrome ring — y: 0.76 → 0.82, centre 0.79
+  const ringHi = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.06, 12), chrome);
+  ringHi.position.y = 0.79; g.add(ringHi);
+
+  // Glass globe — radius 0.32, centre 1.14, y: 0.82 → 1.46
+  const globe = new THREE.Mesh(new THREE.SphereGeometry(0.32, 18, 14), glass);
+  globe.position.y = 1.14; g.add(globe);
+
+  // Gumballs inside globe — 7 small spheres, positions fully deterministic
+  const gumCols = [0xff4466, 0x44aaff, 0x44dd88, 0xffaa22, 0xdd44ff, 0xffee44, 0xff6644];
+  const gumH    = [0.10, -0.10, 0.05, -0.05, 0.0, 0.12, -0.08];
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 7) * Math.PI * 2;
+    const gm = new THREE.Mesh(new THREE.SphereGeometry(0.058, 7, 6),
+      new THREE.MeshStandardMaterial({ color: gumCols[i], roughness: 0.45, metalness: 0.15 }));
+    gm.position.set(Math.sin(a) * 0.15, 1.14 + gumH[i], Math.cos(a) * 0.15);
+    g.add(gm);
+  }
+
+  // Top chrome ring — y: 1.46 → 1.51, centre 1.485
+  const ringTop = new THREE.Mesh(new THREE.CylinderGeometry(0.33, 0.33, 0.05, 12), chrome);
+  ringTop.position.y = 1.485; g.add(ringTop);
+
+  // Cap — y: 1.51 → 1.63, centre 1.57
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.32, 0.12, 12), red);
+  cap.position.y = 1.57; g.add(cap);
+
+  // Knob — centre 1.705
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.075, 8, 8), chrome);
+  knob.position.y = 1.705; g.add(knob);
+
+  return g;
+}
+
+function makeWorldBubble(colorIdx) {
+  const col = BUBBLE_COLORS[colorIdx % BUBBLE_COLORS.length];
+  const grp = new THREE.Group();
+  // Outer transparent shell
+  const outerMat = new THREE.MeshStandardMaterial({
+    color: col, transparent: true, opacity: 0.22,
+    metalness: 0.05, roughness: 0.02,
+    emissive: new THREE.Color(col), emissiveIntensity: 0.12,
+  });
+  grp.add(new THREE.Mesh(new THREE.SphereGeometry(BUBBLE_RADIUS, 14, 10), outerMat));
+  // Inner gumball
+  const innerMat = new THREE.MeshStandardMaterial({ color: col, roughness: 0.45, metalness: 0.2 });
+  grp.add(new THREE.Mesh(new THREE.SphereGeometry(0.18, 10, 8), innerMat));
+  return grp;
+}
+
+function makePlayerBubbleMesh() {
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xaaddff, transparent: true, opacity: 0.28,
+    metalness: 0.05, roughness: 0.02,
+    emissive: new THREE.Color(0x55aaff), emissiveIntensity: 0.18,
+  });
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.70, 16, 12), mat);
+  mesh.position.y = 0.85; // centres on the player body (feet at y=0)
+  return mesh;
+}
+
+function spawnGumball(angle, speed, colorIdx) {
+  const mx = gumballMachineGroup.position.x;
+  const mz = gumballMachineGroup.position.z;
+  const grp = makeWorldBubble(colorIdx);
+  const bx = mx, by = 1.14, bz = mz; // spawn at globe centre
+  grp.position.set(bx, by, bz);
+  scene.add(grp);
+  gumballBubbles.push({
+    group: grp,
+    x: bx, y: by, z: bz,
+    velX: Math.sin(angle) * speed,
+    velY: 0.7,
+    velZ: Math.cos(angle) * speed,
+    life: 6.0,
+  });
+  window.SFX?.gumballShoot();
+}
+
+function popLocalBubble() {
+  if (!isBubbleTrapped) return;
+  isBubbleTrapped    = false;
+  bubbleTrappedTimer = 0;
+  if (localBubbleMesh) {
+    playerGroup.remove(localBubbleMesh);
+    localBubbleMesh = null;
+  }
+  window.SFX?.bubblePop();
+  broadcastSelf();
+}
+
+function updateGumballEvent(dt) {
+  if (!gumballMachineGroup) return;
+  gumballEventElapsed += dt;
+
+  // ── Phase 1: machine falls from sky ─────────────────────────────
+  if (gumballFalling) {
+    gumballFallVelY -= 28 * dt;
+    gumballMachineGroup.position.y += gumballFallVelY * dt;
+    if (gumballMachineGroup.position.y <= 0) {
+      gumballMachineGroup.position.y = 0;
+      gumballFalling = false;
+      window.SFX?.gumballLand();
+    }
+    return;
+  }
+
+  // ── Phase 2: fire bubbles per schedule ──────────────────────────
+  while (gumballSchedIdx < gumballSchedule.length &&
+         gumballSchedule[gumballSchedIdx].t <= gumballEventElapsed) {
+    const s = gumballSchedule[gumballSchedIdx++];
+    spawnGumball(s.angle, s.speed, s.colorIdx);
+  }
+
+  // ── Update & cull world bubbles ──────────────────────────────────
+  for (let i = gumballBubbles.length - 1; i >= 0; i--) {
+    const b = gumballBubbles[i];
+    b.life -= dt;
+    b.x += b.velX * dt;
+    b.y += b.velY * dt;
+    b.z += b.velZ * dt;
+    b.velY -= 1.5 * dt; // slight gravity so they arc
+    b.group.position.set(b.x, b.y, b.z);
+    b.group.rotation.y += dt * 1.2;
+
+    const offEdge = Math.abs(b.x) > PLATFORM_HALF + 6 || Math.abs(b.z) > PLATFORM_HALF + 6 || b.y < -4;
+    if (b.life <= 0 || offEdge) {
+      scene.remove(b.group);
+      gumballBubbles.splice(i, 1);
+      continue;
+    }
+
+    // Collision with local player
+    if (!isBubbleTrapped && !isDead && !isGhost) {
+      const dx = b.x - playerGroup.position.x;
+      const dy = b.y - (playerGroup.position.y + 0.85);
+      const dz = b.z - playerGroup.position.z;
+      if (Math.sqrt(dx*dx + dy*dy + dz*dz) < BUBBLE_RADIUS + 0.42) {
+        // Trap!
+        isBubbleTrapped  = true;
+        bubbleTrappedTimer = 4.0;
+        bubbleDriftX     = b.velX * 0.40;
+        bubbleDriftZ     = b.velZ * 0.40;
+        velY             = Math.max(velY, 2.8); // float upward
+        localBubbleMesh  = makePlayerBubbleMesh();
+        playerGroup.add(localBubbleMesh);
+        window.SFX?.bubbleTrap();
+        broadcastSelf();
+        scene.remove(b.group);
+        gumballBubbles.splice(i, 1);
+        continue;
+      }
+    }
+  }
+
+  // ── Bubble trap countdown ────────────────────────────────────────
+  if (isBubbleTrapped) {
+    bubbleTrappedTimer -= dt;
+    if (bubbleTrappedTimer <= 0) popLocalBubble();
+  }
+}
+
+function despawnGumballMachine() {
+  if (!gumballMachineGroup) return;
+  window.SFX?.gumballBreak();
+  const dying = gumballMachineGroup;
+  let brkT = 0;
+  explosionEffects.push((d) => {
+    brkT += d;
+    dying.scale.setScalar(Math.max(0, 1 - brkT / 0.35));
+    dying.rotation.y += d * 6;
+    if (brkT >= 0.35) { scene.remove(dying); return true; }
+    return false;
+  });
+  gumballMachineGroup = null;
+  gumballFrozenTile   = null;
+  for (const b of gumballBubbles) scene.remove(b.group);
+  gumballBubbles.length = 0;
+  if (isBubbleTrapped) popLocalBubble();
+}
+
 // Called independently on every client at the same deterministic game-time.
 function triggerEvent(type) {
   eventState = 'announcing';
@@ -2960,6 +3244,27 @@ function beginEvent() {
     lavaSavedTileTimeLeft = Math.max(3, nextTileTime - gameTime);
     nextTileTime          = Infinity;
     spawnLava();
+  } else if (eventType === 'gumball_cannon') {
+    eventTimer = 95;
+    gumballEventElapsed = 0;
+    gumballSchedIdx     = 0;
+    gumballSchedule     = generateGumballSchedule();
+    const solidTiles = tileObjects.filter(t => t.state === 'solid');
+    if (solidTiles.length === 0) { endEvent(); return; }
+    let _gt = (_gameSeed ^ (0xd1d10000 + eventCount * 0x5555)) >>> 0;
+    _gt = (Math.imul(_gt, 1664525) + 1013904223) | 0;
+    gumballFrozenTile = solidTiles[(_gt >>> 0) % solidTiles.length];
+    gumballFrozenTile.state = 'solid';
+    gumballFrozenTile.timer = 0;
+    gumballFrozenTile.mesh.material.color.copy(gumballFrozenTile.solidColor);
+    gumballMachineGroup = makeGumballMachine();
+    gumballMachineGroup.position.set(gumballFrozenTile.cx, 14, gumballFrozenTile.cz);
+    scene.add(gumballMachineGroup);
+    gumballFalling  = true;
+    gumballFallVelY = 0;
+    isBubbleTrapped    = false;
+    bubbleTrappedTimer = 0;
+    if (localBubbleMesh) { playerGroup.remove(localBubbleMesh); localBubbleMesh = null; }
   } else if (eventType === 'hot_potato') {
     // Fuse duration: deterministic 15–30 s
     let _hs = (_gameSeed ^ (0xb0b0b0b0 + eventCount * 0xd83c)) >>> 0;
@@ -2990,6 +3295,7 @@ function endEvent() {
   clearWindStreaks();
   despawnLava();
   despawnHotPotato();
+  despawnGumballMachine();
   // Restore tile dropping if lava froze it
   if (lavaSavedTileTimeLeft > 0) {
     nextTileTime          = gameTime + lavaSavedTileTimeLeft;
@@ -3749,7 +4055,7 @@ function loop(now) {
     if (tileDropIndex < TILE_TOTAL && gameTime >= nextTileTime) {
       const idx = tileOrder[tileDropIndex];
       const tile = tileObjects[idx];
-      if (tile && tile.state === 'solid') {
+      if (tile && tile.state === 'solid' && tile !== gumballFrozenTile) {
         tile.state = 'warning';
         tile.timer = TILE_WARN_S;
       }
@@ -3758,6 +4064,7 @@ function loop(now) {
     }
     // Tile state machine
     for (const t of tileObjects) {
+      if (t === gumballFrozenTile) continue; // machine is sitting on this tile — keep it solid
       if (t.state === 'warning') {
         t.timer -= dt;
         // Flash the tile between warning orange and the round's solid colour
@@ -3784,10 +4091,9 @@ function loop(now) {
 
     // --- Random event system (deterministic — all clients run in sync via shared seed) ---
     if (eventState === 'idle' && gameTime >= nextEventTime) {
-      // First event of every match is hot_potato (for testing); after that random
       let nextType;
       if (eventCount === 0) {
-        nextType = 'hot_potato';
+        nextType = 'gumball_cannon'; // force first event for testing
       } else {
         let _es = (_gameSeed ^ (0xe0e00000 + eventCount * 0x9e3779b9)) >>> 0;
         _es = (Math.imul(_es, 1664525) + 1013904223) | 0;
@@ -3821,6 +4127,8 @@ function loop(now) {
         updateLavaEvent(dt);
       } else if (eventType === 'hot_potato') {
         updateHotPotatoEvent(dt);
+      } else if (eventType === 'gumball_cannon') {
+        updateGumballEvent(dt);
       }
       if (eventTimer <= 0 && eventState === 'running') endEvent();
     }
@@ -3907,6 +4215,8 @@ function loop(now) {
       hint.textContent = cd > 0 ? `👻 Ghost punch ready in ${cd.toFixed(1)}s` : '👻 LMB — Ghost Punch (big knockback)';
     }
   } else {
+    // Bubble trap locks out WASD steering
+    if (isBubbleTrapped) _dir.set(0, 0, 0);
     isMoving = _dir.lengthSq() > 0 && !isDead && !isSlipping;
   }
 
@@ -3932,6 +4242,11 @@ function loop(now) {
   windVelZ *= decay;
   playerGroup.position.x += windVelX * dt;
   playerGroup.position.z += windVelZ * dt;
+  // Bubble drift — gentle constant push while trapped
+  if (isBubbleTrapped) {
+    playerGroup.position.x += bubbleDriftX * dt;
+    playerGroup.position.z += bubbleDriftZ * dt;
+  }
   }
 
   // --- Collision resolution (skip for ghosts) ---

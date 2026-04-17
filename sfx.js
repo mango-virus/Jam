@@ -565,6 +565,87 @@
     o2.start(t); o2.stop(t + 0.12);
   }
 
+  // ── GUMBALL LAND — heavy thud when machine hits the platform ────
+  function gumballLand() {
+    ensureCtx(); resume();
+    const t = ctx.currentTime;
+    // Deep bass thud
+    const o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(75, t); o.frequency.exponentialRampToValueAtTime(20, t + 0.32);
+    const g = ctx.createGain(); g.gain.setValueAtTime(1.1, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+    o.connect(g); g.connect(master); o.start(t); o.stop(t + 0.42);
+    // Low floor-shake noise
+    const src = ctx.createBufferSource(); src.buffer = noise(0.28);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 380;
+    const g2 = ctx.createGain(); g2.gain.setValueAtTime(0.85, t); g2.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+    src.connect(lp); lp.connect(g2); g2.connect(master); src.start(t); src.stop(t + 0.32);
+    // Metallic ring
+    const o2 = ctx.createOscillator(); o2.type = 'triangle'; o2.frequency.value = 440;
+    const g3 = ctx.createGain(); g3.gain.setValueAtTime(0.22, t + 0.04); g3.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
+    o2.connect(g3); g3.connect(master); o2.start(t + 0.04); o2.stop(t + 0.58);
+  }
+
+  // ── GUMBALL SHOOT — airy pop as bubble launches ──────────────────
+  function gumballShoot() {
+    ensureCtx(); resume();
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource(); src.buffer = noise(0.08);
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1100; bp.Q.value = 2.5;
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.42, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+    src.connect(bp); bp.connect(g); g.connect(master); src.start(t); src.stop(t + 0.12);
+    const o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(280, t); o.frequency.exponentialRampToValueAtTime(820, t + 0.08);
+    const g2 = ctx.createGain(); g2.gain.setValueAtTime(0.2, t); g2.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+    o.connect(g2); g2.connect(master); o.start(t); o.stop(t + 0.12);
+  }
+
+  // ── GUMBALL BREAK — machine shatters at end of event ─────────────
+  function gumballBreak() {
+    ensureCtx(); resume();
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource(); src.buffer = noise(0.5);
+    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 2400;
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.75, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
+    src.connect(hp); hp.connect(g); g.connect(master); src.start(t); src.stop(t + 0.6);
+    const src2 = ctx.createBufferSource(); src2.buffer = noise(0.32);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 580;
+    const g2 = ctx.createGain(); g2.gain.setValueAtTime(0.8, t); g2.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+    src2.connect(lp); lp.connect(g2); g2.connect(master); src2.start(t); src2.stop(t + 0.38);
+    const o = ctx.createOscillator(); o.type = 'triangle';
+    o.frequency.setValueAtTime(540, t); o.frequency.exponentialRampToValueAtTime(110, t + 0.28);
+    const g3 = ctx.createGain(); g3.gain.setValueAtTime(0.38, t); g3.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+    o.connect(g3); g3.connect(master); o.start(t); o.stop(t + 0.32);
+  }
+
+  // ── BUBBLE TRAP — player gets encased in a bubble ────────────────
+  function bubbleTrap() {
+    ensureCtx(); resume();
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator(); o.type = 'sawtooth';
+    o.frequency.setValueAtTime(180, t); o.frequency.exponentialRampToValueAtTime(750, t + 0.22);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1400;
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.32, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.26);
+    o.connect(lp); lp.connect(g); g.connect(master); o.start(t); o.stop(t + 0.28);
+    const o2 = ctx.createOscillator(); o2.type = 'sine';
+    o2.frequency.setValueAtTime(620, t + 0.1); o2.frequency.exponentialRampToValueAtTime(190, t + 0.38);
+    const g2 = ctx.createGain(); g2.gain.setValueAtTime(0.28, t + 0.1); g2.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+    o2.connect(g2); g2.connect(master); o2.start(t + 0.1); o2.stop(t + 0.42);
+  }
+
+  // ── BUBBLE POP — satisfying burst when bubble pops ───────────────
+  function bubblePop() {
+    ensureCtx(); resume();
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource(); src.buffer = noise(0.04);
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1900; bp.Q.value = 3;
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.75, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+    src.connect(bp); bp.connect(g); g.connect(master); src.start(t); src.stop(t + 0.06);
+    const o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(530, t); o.frequency.exponentialRampToValueAtTime(170, t + 0.2);
+    const g2 = ctx.createGain(); g2.gain.setValueAtTime(0.32, t); g2.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+    o.connect(g2); g2.connect(master); o.start(t); o.stop(t + 0.24);
+  }
+
   // ── BOMB TICK — sharp metallic click ───────────────────────────
   function bombTick() {
     ensureCtx(); resume();
@@ -674,5 +755,5 @@
     src2.start(t + 0.05); src2.stop(t + 0.3);
   }
 
-  window.SFX = { punch, swordHit, gloveHit, batNormal, batHomeRun, shieldBlock, shieldBreak, itemBreak, pickup, die, respawn, ghostPunch, swordSwing, gloveSwing, batSwing, rocketBoost, bananaPlace, bananaSlip, windGust, goblinDrop, lavaBurn, bombTick, bombPass, bombExplode };
+  window.SFX = { punch, swordHit, gloveHit, batNormal, batHomeRun, shieldBlock, shieldBreak, itemBreak, pickup, die, respawn, ghostPunch, swordSwing, gloveSwing, batSwing, rocketBoost, bananaPlace, bananaSlip, windGust, goblinDrop, lavaBurn, bombTick, bombPass, bombExplode, gumballLand, gumballShoot, gumballBreak, bubbleTrap, bubblePop };
 })();
