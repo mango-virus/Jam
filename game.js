@@ -3005,7 +3005,7 @@ function showPreStartMsg(timeLeft) {
     preStartMsgEl.style.display = 'none';
     preStartMsgEl.textContent = '';
   } else {
-    preStartMsgEl.style.display = '';
+    preStartMsgEl.style.display = 'block';
     preStartMsgEl.textContent = `⏳ Match starting in ${Math.ceil(timeLeft)}s — press Ready Up to join!`;
   }
 }
