@@ -1759,7 +1759,7 @@ function randomItemPos() {
   return null;
 }
 
-function makeGroundItem(type, x, z, id = nextItemId()) {
+function makeGroundItem(type, x, z, id = nextItemId(), surfaceY = null) {
   const g = new THREE.Group();
   if (type === 'sword') {
     // Knight's longsword — matches the equipped model geometry/materials
@@ -1988,15 +1988,16 @@ function makeGroundItem(type, x, z, id = nextItemId()) {
     glow.position.y = 0.3;
     g.add(glow);
   }
-  g.position.set(x, 0.1, z);
+  const sy = surfaceY !== null ? surfaceY : (getSurfaceBelow(x, z, 0.5) ?? 0);
+  g.position.set(x, sy + (type === 'sword' ? 0.22 : 0.1), z);
   scene.add(g);
-  return { group: g, type, x, z, id, expires: performance.now() / 1000 + ITEM_LIFETIME };
+  return { group: g, type, x, z, id, surfaceY: sy, expires: performance.now() / 1000 + ITEM_LIFETIME };
 }
 
 // Creates a banana peel Three.js group at (x, z) and adds it to the scene.
-function makeBananaPeel(x, z) {
+function makeBananaPeel(x, z, surfaceY = 0) {
   const g = new THREE.Group();
-  g.position.set(x, 0.03, z);
+  g.position.set(x, surfaceY + 0.03, z);
   const peelMat = new THREE.MeshStandardMaterial({ color: 0xd4b800, roughness: 0.8, side: THREE.DoubleSide });
   // 4 flaps radiating out
   for (let i = 0; i < 4; i++) {
@@ -2019,11 +2020,12 @@ function placePeel() {
   const x = playerGroup.position.x;
   const z = playerGroup.position.z;
   const id = nextPeelId();
-  const group = makeBananaPeel(x, z);
-  bananaPeels.push({ group, x, z, id });
+  const sy = getSurfaceBelow(x, z, playerGroup.position.y) ?? 0;
+  const group = makeBananaPeel(x, z, sy);
+  bananaPeels.push({ group, x, z, y: sy, id });
   bananaImmunityTimer = BANANA_IMMUNITY;
   window.SFX?.bananaPlace();
-  sendPeel?.({ act: 'place', id, x, z });
+  sendPeel?.({ act: 'place', id, x, z, y: sy });
   // Consume banana
   hasBanana = false; bananaDurability = 0;
   playerBanana.visible = false;
@@ -2214,10 +2216,11 @@ function breakBanana() {
 function dropItem() {
   const px = playerGroup.position.x, pz = playerGroup.position.z;
   const dropAngle = playerGroup.rotation.y + Math.PI;
+  const dropSY = getSurfaceBelow(px, pz, playerGroup.position.y) ?? 0;
   function spawnDrop(type, dist) {
-    const it = makeGroundItem(type, px + Math.sin(dropAngle) * dist, pz + Math.cos(dropAngle) * dist);
+    const it = makeGroundItem(type, px + Math.sin(dropAngle) * dist, pz + Math.cos(dropAngle) * dist, undefined, dropSY);
     groundItems.push(it);
-    sendItemEvent?.({ act: 'drop', id: it.id, type: it.type, x: it.x, z: it.z });
+    sendItemEvent?.({ act: 'drop', id: it.id, type: it.type, x: it.x, z: it.z, y: dropSY });
   }
   if (hasSword)  { spawnDrop('sword',  1.2); hasSword  = false; swordDurability  = 0; playerSword.visible  = false; }
   if (hasGlove)  { spawnDrop('glove',  1.2); hasGlove  = false; gloveDurability  = 0; playerGlove.visible  = false; }
@@ -2442,8 +2445,8 @@ async function setupMultiplayer() {
     onPeel((data) => {
       if (data.act === 'place') {
         if (!bananaPeels.some(p => p.id === data.id)) {
-          const group = makeBananaPeel(data.x, data.z);
-          bananaPeels.push({ group, x: data.x, z: data.z, id: data.id });
+          const group = makeBananaPeel(data.x, data.z, data.y ?? 0);
+          bananaPeels.push({ group, x: data.x, z: data.z, y: data.y ?? 0, id: data.id });
         }
       } else if (data.act === 'slip' || data.act === 'remove') {
         removePeelById(data.id);
@@ -2456,7 +2459,7 @@ async function setupMultiplayer() {
       if (data.act === 'spawn' || data.act === 'drop') {
         // Add item if we don't already have it (dedup in case of rebroadcast)
         if (!groundItems.some(it => it.id === data.id)) {
-          groundItems.push(makeGroundItem(data.type, data.x, data.z, data.id));
+          groundItems.push(makeGroundItem(data.type, data.x, data.z, data.id, data.y ?? null));
         }
       } else if (data.act === 'pickup' || data.act === 'remove') {
         const idx = groundItems.findIndex(it => it.id === data.id);
@@ -2488,7 +2491,7 @@ async function setupMultiplayer() {
       // Host sends all current ground items to the newly joined peer
       if (isHost && gameState === 'playing') {
         for (const it of groundItems) {
-          sItem({ act: 'spawn', id: it.id, type: it.type, x: it.x, z: it.z }, peerId);
+          sItem({ act: 'spawn', id: it.id, type: it.type, x: it.x, z: it.z, y: it.surfaceY ?? 0 }, peerId);
         }
       }
     });
@@ -2670,10 +2673,11 @@ document.addEventListener('keydown', e => {
       if (Math.hypot(px - it.x, pz - it.z) < ITEM_PICKUP_R) {
         // Helper: drop current item and broadcast it
         const dropAngle = playerGroup.rotation.y + Math.PI;
+        const swapSY = getSurfaceBelow(px, pz, playerGroup.position.y) ?? 0;
         function swapDrop(type, dist) {
-          const dropped = makeGroundItem(type, px + Math.sin(dropAngle) * dist, pz + Math.cos(dropAngle) * dist);
+          const dropped = makeGroundItem(type, px + Math.sin(dropAngle) * dist, pz + Math.cos(dropAngle) * dist, undefined, swapSY);
           groundItems.push(dropped);
-          sendItemEvent?.({ act: 'drop', id: dropped.id, type: dropped.type, x: dropped.x, z: dropped.z });
+          sendItemEvent?.({ act: 'drop', id: dropped.id, type: dropped.type, x: dropped.x, z: dropped.z, y: swapSY });
         }
         const isWeapon = it.type === 'sword' || it.type === 'glove' || it.type === 'bat' || it.type === 'banana' || it.type === 'grenade';
         if (it.type === 'boots' && hasBoots) {
@@ -5028,14 +5032,15 @@ function loop(now) {
       fb.group.position.y += fb.velY * dt;
       fb.group.rotation.x += fb.rotVX * dt;
       fb.group.rotation.z += fb.rotVZ * dt;
-      if (fb.group.position.y <= 0.1) {
+      const landY = getSurfaceBelow(fb.x, fb.z, Infinity) ?? 0;
+      if (fb.group.position.y <= landY + 0.1) {
         // Landed — place peel using its deterministic ID (same on every client)
         if (fb.peelId !== null && !isTileUnstable(fb.x, fb.z) && getTileAt(fb.x, fb.z)) {
           if (!bananaPeels.some(p => p.id === fb.peelId)) {
-            const g = makeBananaPeel(fb.x, fb.z);
-            bananaPeels.push({ group: g, x: fb.x, z: fb.z, id: fb.peelId });
+            const g = makeBananaPeel(fb.x, fb.z, landY);
+            bananaPeels.push({ group: g, x: fb.x, z: fb.z, y: landY, id: fb.peelId });
             // Broadcast so peers with slight timing drift also see the peel land
-            sendPeel?.({ act: 'place', id: fb.peelId, x: fb.x, z: fb.z });
+            sendPeel?.({ act: 'place', id: fb.peelId, x: fb.x, z: fb.z, y: landY });
             window.SFX?.bananaPlace();
           }
         }
@@ -5363,7 +5368,7 @@ function loop(now) {
     }
     // Flicker in the last 3 seconds to warn players it's about to vanish
     it.group.visible = timeLeft < 3 ? Math.sin(time * 18) > 0 : true;
-    const itemBaseY = it.type === 'sword' ? 0.22 : 0.1;
+    const itemBaseY = (it.surfaceY ?? 0) + (it.type === 'sword' ? 0.22 : 0.1);
     it.group.position.y = itemBaseY + Math.sin(time * 2.5 + it.x) * 0.08;
     it.group.rotation.y += dt * 1.2;
   }
@@ -5384,7 +5389,7 @@ function loop(now) {
     const ppx = playerGroup.position.x, ppz = playerGroup.position.z;
     for (let i = bananaPeels.length - 1; i >= 0; i--) {
       const peel = bananaPeels[i];
-      if (Math.hypot(ppx - peel.x, ppz - peel.z) < PEEL_PICKUP_R && playerGroup.position.y < 0.8) {
+      if (Math.hypot(ppx - peel.x, ppz - peel.z) < PEEL_PICKUP_R && playerGroup.position.y < (peel.y ?? 0) + 0.8) {
         // Slip!
         isSlipping = true;
         slipTimer = 0.65;
