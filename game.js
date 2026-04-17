@@ -514,28 +514,36 @@ function makeCharacter(hexColor) {
   rightArm.add(swordGroup);
 
   // Boxing glove (shown in right hand when equipped)
+  // Centred on the arm (no z-offset) so the arm mesh can never clip through.
+  // Sphere half-extents (0.21, 0.19, 0.195) fully contain the 0.15×0.15 arm cross-section
+  // all the way up to the wrist where the cuff takes over.
   const gloveGroup = new THREE.Group();
-  gloveGroup.position.set(0, -0.50, 0.06);
+  gloveGroup.position.set(0, -0.44, 0);
   gloveGroup.visible = false;
-  // Main glove body — red sphere, wider than tall
-  const gloveMesh = new THREE.Mesh(new THREE.SphereGeometry(0.135, 10, 8),
-    new THREE.MeshStandardMaterial({ color: 0xcc2200, roughness: 0.55, metalness: 0.08 }));
-  gloveMesh.scale.set(1.35, 1.05, 1.2);
+  // Main glove body
+  const gloveMat = new THREE.MeshStandardMaterial({ color: 0xcc2200, roughness: 0.55, metalness: 0.08 });
+  const gloveMesh = new THREE.Mesh(new THREE.SphereGeometry(0.15, 12, 10), gloveMat);
+  gloveMesh.scale.set(1.4, 1.25, 1.3);   // half-extents ≈ 0.21 × 0.1875 × 0.195
   gloveGroup.add(gloveMesh);
-  // Knuckle ridge — slightly lighter strip across the front
-  const knuckle = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.05, 0.08),
+  // Knuckle ridge across the front face
+  const knuckle = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.06, 0.07),
     new THREE.MeshStandardMaterial({ color: 0xdd3300, roughness: 0.5 }));
-  knuckle.position.set(0, 0.04, 0.12);
+  knuckle.position.set(0, 0.02, 0.19);
   gloveGroup.add(knuckle);
-  // Wrist cuff — white wrap
-  const gloveCuff = new THREE.Mesh(new THREE.CylinderGeometry(0.10, 0.10, 0.10, 12),
+  // Thumb stub on the side
+  const thumb = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), gloveMat);
+  thumb.scale.set(0.7, 1.05, 0.8);
+  thumb.position.set(0.20, 0.05, 0.05);
+  gloveGroup.add(thumb);
+  // Wrist cuff — radius 0.12 exceeds arm corner diagonal (0.106) so corners never poke through
+  const gloveCuff = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.12, 12),
     new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85 }));
-  gloveCuff.position.y = 0.16;
+  gloveCuff.position.y = 0.25;   // overlaps sphere top, covers wrist up to y ≈ −0.13 arm-local
   gloveGroup.add(gloveCuff);
-  // Velcro strap — dark strip on cuff
-  const strap = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.03, 0.11),
+  // Velcro strap on the cuff
+  const strap = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.035, 0.125),
     new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.9 }));
-  strap.position.set(0, 0.19, 0.04);
+  strap.position.set(0, 0.285, 0.04);
   gloveGroup.add(strap);
   rightArm.add(gloveGroup);
 
