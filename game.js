@@ -1948,7 +1948,8 @@ const CLOUD_BLOW_TIME    = 3.5;  // seconds of active wind
 const CLOUD_GUSTS        = 3;    // total gusts before dissipation
 const CLOUD_DISSIPATE_S  = 2.5;  // fade-out duration
 const WIND_WIDTH         = 14;   // full width of wind corridor (units)
-const WIND_ACCEL         = 85;   // horizontal acceleration applied to players in corridor (units/s²)
+const WIND_ACCEL         = 55;   // acceleration applied while in corridor (units/s²)
+const WIND_MAX_SPEED     = 13;   // wind velocity cap — sprint (11 u/s) can fight this
 
 // --- Cloud event state ---
 let cloudGroup          = null;       // THREE.Group | null
@@ -1963,6 +1964,8 @@ let cloudSchedule       = [];         // pre-generated circle durations for the 
 const windStreaks        = [];         // { mesh, mat, velX, velZ, lifetime, maxLifetime }
 let cloudSmileParts     = [];         // mouth meshes shown while idle / circling
 let cloudBlowParts      = [];         // mouth meshes shown while blowing
+let windVelX            = 0;          // wind-push velocity, separate from punch knockback
+let windVelZ            = 0;
 
 const GHOST_KNOCKBACK_H  = 55;
 const GHOST_KNOCKBACK_UP = 16;
@@ -2082,7 +2085,7 @@ function enterGhostMode() {
   playerNormalBody.visible = false;
   playerGhostBody.visible  = true;
   ghostPunchCooldown = 0;
-  velY = 0; velX = 0; velZ = 0;
+  velY = 0; velX = 0; velZ = 0; windVelX = 0; windVelZ = 0;
   if (deathEl) deathEl.style.display = 'none';
   updateLivesHUD();
 }
@@ -2100,7 +2103,7 @@ function reviveAsGhost() {
   exitGhostMode();
   localLives = 1;
   playerGroup.position.set(SPAWN_X, SPAWN_Y, SPAWN_Z);
-  velY = 0; velX = 0; velZ = 0;
+  velY = 0; velX = 0; velZ = 0; windVelX = 0; windVelZ = 0;
   onGround = false;
   isDead = false;
   if (deathEl) deathEl.style.display = 'none';
@@ -2114,7 +2117,7 @@ function die(opts = {}) {
   deathTimer = homeRunDeath ? 4.0 : 2.0;
   window.SFX?.die();
   if (!homeRunDeath) {
-    velY = 0; velX = 0; velZ = 0;
+    velY = 0; velX = 0; velZ = 0; windVelX = 0; windVelZ = 0;
     hasFallenOff = true; // prevent physics re-landing
   }
   if (gameState === 'playing') {
@@ -2164,7 +2167,7 @@ function respawn() {
   } else {
     playerGroup.position.set(0, 1, 0);
   }
-  velY = 0; velX = 0; velZ = 0;
+  velY = 0; velX = 0; velZ = 0; windVelX = 0; windVelZ = 0;
   onGround = false;
   if (deathEl) deathEl.style.display = 'none';
 }
@@ -2248,7 +2251,7 @@ function returnToLobby() {
   hideEventAnnouncement();
   // Move player to lobby
   playerGroup.position.set(0, 1, 0);
-  velY = 0; velX = 0; velZ = 0;
+  velY = 0; velX = 0; velZ = 0; windVelX = 0; windVelZ = 0;
   onGround = false;
   if (deathEl) deathEl.style.display = 'none';
   if (gameOverEl) gameOverEl.classList.remove('active');
@@ -2315,7 +2318,7 @@ function startGame(seed, broadcast) {
   platform.visible = false;
   // Spawn player on center pillar
   playerGroup.position.set(SPAWN_X, SPAWN_Y, SPAWN_Z);
-  velY = 0; velX = 0; velZ = 0;
+  velY = 0; velX = 0; velZ = 0; windVelX = 0; windVelZ = 0;
   onGround = false;
   playerArmorGroup.visible = hasArmor;
   if (menuEl) menuEl.classList.remove('active');
@@ -2764,7 +2767,8 @@ function updateCloudEvent(dt) {
     cloudBlowTimer -= dt;
     updateWindStreaks(dt);
 
-    // Apply wind force to local player if in the corridor
+    // Apply wind force to local player if in the corridor.
+    // Uses a separate windVelX/Z capped at WIND_MAX_SPEED so player movement remains meaningful.
     if (!isDead && !isGhost) {
       const wdx = -Math.cos(cloudAngle);
       const wdz = -Math.sin(cloudAngle);
@@ -2777,8 +2781,14 @@ function updateCloudEvent(dt) {
       const along = dx * wdx + dz * wdz;
       const perp  = dx * (-wdz) + dz * wdx;
       if (along > -4 && Math.abs(perp) < WIND_WIDTH * 0.5) {
-        velX += wdx * WIND_ACCEL * dt;
-        velZ += wdz * WIND_ACCEL * dt;
+        windVelX += wdx * WIND_ACCEL * dt;
+        windVelZ += wdz * WIND_ACCEL * dt;
+        // Cap so sprint (11 u/s) can meaningfully fight the wind
+        const spd = Math.hypot(windVelX, windVelZ);
+        if (spd > WIND_MAX_SPEED) {
+          windVelX = windVelX / spd * WIND_MAX_SPEED;
+          windVelZ = windVelZ / spd * WIND_MAX_SPEED;
+        }
       }
     }
 
@@ -2981,6 +2991,11 @@ function loop(now) {
   velZ *= decay;
   playerGroup.position.x += velX * dt;
   playerGroup.position.z += velZ * dt;
+  // Wind push — same decay so it fades quickly once out of the corridor
+  windVelX *= decay;
+  windVelZ *= decay;
+  playerGroup.position.x += windVelX * dt;
+  playerGroup.position.z += windVelZ * dt;
   }
 
   // --- Collision resolution (skip for ghosts) ---
