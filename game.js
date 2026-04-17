@@ -582,25 +582,24 @@ function makeCharacter(hexColor) {
   rightArm.add(batGroup);
 
   // Banana (shown in right hand when equipped)
-  // Each piece has its own rotation.z that changes progressively, and positions
-  // are chain-computed so every piece's bottom exactly meets the previous piece's top.
-  // This creates a proper crescent arc instead of a straight stick.
-  // Formula: given piece i with center (cx,cy), rot α, height h:
-  //   top = (cx - h/2·sin(α),  cy + h/2·cos(α))
-  //   next bottom = top, so next_cx = top_x + next_h/2·sin(next_α)
+  // rotation.x = PI/2 turns the whole group so the banana lies horizontally
+  // (pointing forward like the sword/bat). Pieces are centred around y=0 so
+  // the character grips the middle of the banana.
   const bananaGroup = new THREE.Group();
-  bananaGroup.position.set(0.02, -0.52, 0.06); // grip point at the wrist/hand
+  bananaGroup.position.set(0, -0.52, 0.10);
+  bananaGroup.rotation.x = Math.PI / 2;
   bananaGroup.visible = false;
   const banMat  = new THREE.MeshStandardMaterial({ color: 0xffe135, roughness: 0.65 });
   const bTipMat = new THREE.MeshStandardMaterial({ color: 0x7a5200, roughness: 0.8 });
-  // Pieces: { cx, cy, rot, h, w, mat }  — chain-computed positions, arc from rot+0.55→-0.78
+  // Arc pieces with progressive rotation.z — centred so y=0 is the grip midpoint.
+  // Total arc spans y ≈ -0.22 to +0.22 (about 0.44 long — compact, not stick-like).
   [
-    { cx: -0.013, cy:  0.020, rot:  0.55, h: 0.048, w: 0.044, mat: bTipMat },
-    { cx: -0.046, cy:  0.123, rot:  0.25, h: 0.170, w: 0.070, mat: banMat  },
-    { cx: -0.063, cy:  0.283, rot: -0.05, h: 0.155, w: 0.074, mat: banMat  },
-    { cx: -0.041, cy:  0.420, rot: -0.30, h: 0.125, w: 0.066, mat: banMat  },
-    { cx:  0.004, cy:  0.520, rot: -0.58, h: 0.095, w: 0.052, mat: banMat  },
-    { cx:  0.044, cy:  0.574, rot: -0.78, h: 0.042, w: 0.038, mat: bTipMat },
+    { cx: -0.010, cy: -0.210, rot:  0.52, h: 0.044, w: 0.040, mat: bTipMat },
+    { cx: -0.044, cy: -0.115, rot:  0.28, h: 0.140, w: 0.066, mat: banMat  },
+    { cx: -0.058, cy:  0.012, rot:  0.00, h: 0.120, w: 0.072, mat: banMat  },
+    { cx: -0.036, cy:  0.125, rot: -0.28, h: 0.110, w: 0.064, mat: banMat  },
+    { cx:  0.006, cy:  0.205, rot: -0.52, h: 0.080, w: 0.050, mat: banMat  },
+    { cx:  0.038, cy:  0.248, rot: -0.72, h: 0.038, w: 0.036, mat: bTipMat },
   ].forEach(({ cx, cy, rot, h, w, mat }) => {
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, w), mat);
     m.position.set(cx, cy, 0);
@@ -1205,22 +1204,25 @@ function makeGroundItem(type, x, z, id = nextItemId()) {
   } else if (type === 'banana') {
     const banMat2 = new THREE.MeshStandardMaterial({ color: 0xffe135, roughness: 0.65 });
     const tipMat2 = new THREE.MeshStandardMaterial({ color: 0x7a5200, roughness: 0.8 });
-    // Same chain-computed arc as the held version, scaled 1.4×
+    // Same arc as the held version, scaled ~1.3× and offset so stem sits above ground
+    const bMeshG = new THREE.Group();
+    bMeshG.position.set(0.06, 0.32, 0); // centre of arc sits ~0.32 above ground
     [
-      { cx: -0.018, cy:  0.028, rot:  0.55, h: 0.067, w: 0.062, mat: tipMat2 },
-      { cx: -0.064, cy:  0.172, rot:  0.25, h: 0.238, w: 0.098, mat: banMat2 },
-      { cx: -0.088, cy:  0.396, rot: -0.05, h: 0.217, w: 0.104, mat: banMat2 },
-      { cx: -0.057, cy:  0.588, rot: -0.30, h: 0.175, w: 0.092, mat: banMat2 },
-      { cx:  0.005, cy:  0.728, rot: -0.58, h: 0.133, w: 0.073, mat: banMat2 },
-      { cx:  0.062, cy:  0.804, rot: -0.78, h: 0.059, w: 0.053, mat: tipMat2 },
+      { cx: -0.013, cy: -0.273, rot:  0.52, h: 0.057, w: 0.052, mat: tipMat2 },
+      { cx: -0.057, cy: -0.149, rot:  0.28, h: 0.182, w: 0.086, mat: banMat2 },
+      { cx: -0.075, cy:  0.016, rot:  0.00, h: 0.156, w: 0.094, mat: banMat2 },
+      { cx: -0.047, cy:  0.163, rot: -0.28, h: 0.143, w: 0.083, mat: banMat2 },
+      { cx:  0.008, cy:  0.267, rot: -0.52, h: 0.104, w: 0.065, mat: banMat2 },
+      { cx:  0.049, cy:  0.322, rot: -0.72, h: 0.049, w: 0.047, mat: tipMat2 },
     ].forEach(({ cx, cy, rot, h, w, mat }) => {
       const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, w), mat);
       m.position.set(cx, cy, 0);
       m.rotation.z = rot;
-      g.add(m);
+      bMeshG.add(m);
     });
+    g.add(bMeshG);
     const bGlow = new THREE.PointLight(0xffee00, 0.5, 2.0);
-    bGlow.position.y = 0.4; g.add(bGlow);
+    bGlow.position.y = 0.35; g.add(bGlow);
   } else { // glove
     const body = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8),
       new THREE.MeshStandardMaterial({ color: 0xcc2200, roughness: 0.55, metalness: 0.08 }));
