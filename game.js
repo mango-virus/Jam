@@ -2071,6 +2071,7 @@ let hotPotatoTimer     = 0;      // countdown to explosion
 let hotPotatoMaxTime   = 0;      // total fuse duration (randomised per match)
 let hotPotatoBomb      = null;   // { group, sphere, spark, light }
 let hotPotatoTickTimer = 0;      // time until next tick SFX
+let hotPotatoFlashOn   = false;  // toggles red/black on every tick
 const explosionEffects = [];     // [fn(dt)] transient explosion animations
 
 // --- Lava Floor event constants ---
@@ -2784,29 +2785,39 @@ function updateLavaEvent(dt) {
 
 function makeHotPotatoBomb() {
   const g = new THREE.Group();
-  // Body — matte black sphere
+
+  // ── Body — matte black sphere, radius 0.22 ──────────────────────
   const bodyMat = new THREE.MeshStandardMaterial({
-    color: 0x1a1a1a, metalness: 0.6, roughness: 0.45,
-    emissive: new THREE.Color(0xff2200), emissiveIntensity: 0,
+    color: 0x111111, metalness: 0.55, roughness: 0.5,
+    emissive: new THREE.Color(0xff1100), emissiveIntensity: 0,
   });
-  const sphere = new THREE.Mesh(new THREE.SphereGeometry(0.22, 14, 10), bodyMat);
+  const sphere = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 12), bodyMat);
   g.add(sphere);
-  // Fuse — short brown cylinder, angled off the top
-  const fuseMat = new THREE.MeshStandardMaterial({ color: 0x6b3a1e, roughness: 0.9 });
-  const fuse = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.28, 6), fuseMat);
-  fuse.position.set(0.07, 0.27, 0);
-  fuse.rotation.z = 0.35;
+
+  // ── Fuse — cylinder emerging from sphere surface ─────────────────
+  // Angle from vertical: 0.4 rad.  Exit point on sphere surface:
+  //   (0.22·sin0.4 , 0.22·cos0.4) ≈ (0.085, 0.202)
+  // Fuse half-length 0.14, direction (sin0.4, cos0.4) ≈ (0.389, 0.921)
+  // Fuse centre ≈ exit + dir·0.14 = (0.140, 0.331)
+  // Fuse tip    ≈ exit + dir·0.28 = (0.195, 0.460)
+  const fuseMat = new THREE.MeshStandardMaterial({ color: 0x5c3010, roughness: 0.95 });
+  const fuse = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.026, 0.28, 7), fuseMat);
+  fuse.position.set(0.140, 0.331, 0);
+  fuse.rotation.z = 0.4;
   g.add(fuse);
-  // Spark at tip of fuse — small bright sphere
+
+  // ── Spark — small glowing sphere sitting at the fuse tip ─────────
   const sparkMat = new THREE.MeshStandardMaterial({
-    color: 0xffee00, emissive: new THREE.Color(0xffcc00), emissiveIntensity: 2.0,
+    color: 0xffdd00, emissive: new THREE.Color(0xffaa00), emissiveIntensity: 2.5,
   });
-  const spark = new THREE.Mesh(new THREE.SphereGeometry(0.05, 7, 7), sparkMat);
-  spark.position.set(0.14, 0.41, 0);
+  const spark = new THREE.Mesh(new THREE.SphereGeometry(0.048, 8, 8), sparkMat);
+  spark.position.set(0.195, 0.460, 0);
   g.add(spark);
-  // Dynamic point light for the glow
-  const light = new THREE.PointLight(0xff3300, 0, 3.5);
+
+  // ── Point light for red glow ──────────────────────────────────────
+  const light = new THREE.PointLight(0xff2200, 0, 4.0);
   g.add(light);
+
   return { group: g, sphere, spark, light, bodyMat };
 }
 
@@ -2855,30 +2866,26 @@ function updateHotPotatoEvent(dt) {
     );
   }
 
-  // Urgency 0→1 as timer counts down
+  // Urgency 0→1 as fuse burns down
   const urgency = Math.max(0, 1.0 - hotPotatoTimer / hotPotatoMaxTime);
-  const flashRate = 1.5 + urgency * 9.0; // 1.5 → 10.5 Hz
-  const flashOn = Math.sin(time * Math.PI * 2 * flashRate) > 0.2;
-  hotPotatoBomb.bodyMat.emissiveIntensity = flashOn ? (0.3 + urgency * 2.2) : 0;
-  hotPotatoBomb.light.intensity           = flashOn ? (1.0 + urgency * 5.0) : 0;
+
+  // Tick sound + binary red/black flash — toggles on every tick
+  hotPotatoTickTimer -= dt;
+  if (hotPotatoTickTimer <= 0) {
+    window.SFX?.bombTick();
+    hotPotatoFlashOn = !hotPotatoFlashOn;
+    hotPotatoTickTimer = Math.max(0.06, 0.55 * (1.0 - urgency * 0.88));
+  }
+
+  // Bomb colour: solid black when off, solid red when on
+  hotPotatoBomb.bodyMat.emissiveIntensity = hotPotatoFlashOn ? 1.8 : 0;
+  hotPotatoBomb.light.intensity           = hotPotatoFlashOn ? (1.5 + urgency * 4.0) : 0;
 
   // Slowly rotate bomb
   hotPotatoBomb.group.rotation.y += dt * 1.8;
 
-  // Animate spark — flicker position and brightness
-  hotPotatoBomb.spark.position.set(
-    0.14 + Math.sin(time * 18) * 0.02,
-    0.41 + Math.abs(Math.sin(time * 22)) * 0.02,
-    Math.cos(time * 18) * 0.02,
-  );
-  hotPotatoBomb.spark.material.emissiveIntensity = 1.5 + Math.sin(time * 25) * 0.8;
-
-  // Ticking sound — accelerates with urgency
-  hotPotatoTickTimer -= dt;
-  if (hotPotatoTickTimer <= 0) {
-    window.SFX?.bombTick();
-    hotPotatoTickTimer = Math.max(0.06, 0.55 * (1.0 - urgency * 0.9));
-  }
+  // Spark flicker
+  hotPotatoBomb.spark.material.emissiveIntensity = 2.0 + Math.sin(time * 22) * 0.7;
 
   // Explode when timer runs out
   if (hotPotatoTimer <= 0) {
@@ -2959,6 +2966,7 @@ function beginEvent() {
     hotPotatoTimer   = hotPotatoMaxTime;
     eventTimer       = hotPotatoMaxTime + 5; // safety cap
     hotPotatoTickTimer = 0;
+    hotPotatoFlashOn   = false;
     // Pick initial holder deterministically from sorted player list
     const allIds = [localPeerId, ...[...peers.keys()]].filter(Boolean).sort();
     let _hi = (_gameSeed ^ (0xa1a1a1a1 + eventCount)) >>> 0;
@@ -3774,10 +3782,15 @@ function loop(now) {
 
     // --- Random event system (deterministic — all clients run in sync via shared seed) ---
     if (eventState === 'idle' && gameTime >= nextEventTime) {
-      // Pick event type randomly (deterministic via shared seed so all clients agree)
-      let _es = (_gameSeed ^ (0xe0e00000 + eventCount * 0x9e3779b9)) >>> 0;
-      _es = (Math.imul(_es, 1664525) + 1013904223) | 0;
-      const nextType = EVENT_TYPES[(_es >>> 0) % EVENT_TYPES.length];
+      // First event of every match is hot_potato (for testing); after that random
+      let nextType;
+      if (eventCount === 0) {
+        nextType = 'hot_potato';
+      } else {
+        let _es = (_gameSeed ^ (0xe0e00000 + eventCount * 0x9e3779b9)) >>> 0;
+        _es = (Math.imul(_es, 1664525) + 1013904223) | 0;
+        nextType = EVENT_TYPES[(_es >>> 0) % EVENT_TYPES.length];
+      }
       triggerEvent(nextType);
     }
     if (eventState === 'announcing') {
