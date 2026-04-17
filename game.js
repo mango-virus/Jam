@@ -2303,8 +2303,9 @@ function broadcastSelf() {
     isGhost,
     ready:    localReady,
     hasArmor,
-    bubble:   isBubbleTrapped,
-    inMatch:  gameState === 'playing',
+    bubble:      isBubbleTrapped,
+    inMatch:     gameState === 'playing',
+    spectating:  isSpectating,
   });
 }
 
@@ -2336,6 +2337,7 @@ function addPeer(id, data) {
   char.group.add(nameLabel);
   char.group.position.set(data.x ?? 0, 0, data.z ?? 0);
   char.group.rotation.y = data.rotY ?? 0;
+  char.group.visible = !data.spectating;
   scene.add(char.group);
   peers.set(id, { ...char, tx: data.x ?? 0, ty: data.y ?? 0, tz: data.z ?? 0, rotY: data.rotY ?? 0, moving: false, swing: 0, punchTimer: 0, blocking: false, username: data.username, redrawLabel, pSword: !!data.sword, pGlove: !!data.glove, pBat: !!data.bat, pBoots: !!data.boots, pShield: !!data.shield, pBanana: !!data.banana, pColor: data.color || 'ffffff', lives: data.lives ?? 3, isGhost: !!data.isGhost, hasArmor: !!data.hasArmor, ready: !!data.ready, pBubble: !!data.bubble, bubbleMesh: null, inMatch: !!data.inMatch });
   updateMenuReadyList();
@@ -2566,6 +2568,7 @@ async function setupMultiplayer() {
           }
         }
         if (data.inMatch !== undefined) peer.inMatch = !!data.inMatch;
+        if (data.spectating !== undefined) peer.group.visible = !data.spectating;
         if (gameState === 'lobby') { updateMenuReadyList(); updateMenuSpectateBtn(); }
         if (gameState === 'playing') updatePeerLivesHUD();
         // If spectating and our target left the match, auto-switch
@@ -3268,9 +3271,11 @@ function returnToLobby() {
   localReady = false;
   isDead     = false;
   // Clean up spectator state if returning from spectating
-  isSpectating   = false;
-  spectateTarget = null;
-  playerGroup.visible = true;
+  if (isSpectating) {
+    isSpectating   = false;
+    spectateTarget = null;
+    scene.add(playerGroup); // re-add if it was removed during spectating
+  }
   if (spectatorHudEl) spectatorHudEl.style.display = 'none';
   // Restore player appearance
   exitGhostMode();
@@ -5606,17 +5611,18 @@ function enterSpectatorMode() {
   isSpectating   = true;
   spectateTarget = pickNextSpectateTarget(null);
   spectateYaw    = 0;
-  playerGroup.visible = false; // hide local character while spectating
+  scene.remove(playerGroup);   // remove from scene so nobody sees it
+  broadcastSelf();              // immediately tell peers spectating: true
   if (menuEl) menuEl.classList.remove('active');
   updateSpectatorHUD();
-  // Use pointer lock so the mouse can orbit the camera
   renderer.domElement.requestPointerLock();
 }
 
 function exitSpectatorMode() {
   isSpectating   = false;
   spectateTarget = null;
-  playerGroup.visible = true; // restore local character
+  scene.add(playerGroup);      // restore character to scene
+  broadcastSelf();              // immediately tell peers spectating: false
   spectatorHudEl && (spectatorHudEl.style.display = 'none');
   document.exitPointerLock();
 }
