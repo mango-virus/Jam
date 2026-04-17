@@ -1847,10 +1847,13 @@ if (btnMute) {
   });
 }
 
+const MUSIC_GAME_MULT = 0.30; // in-game music is 70% quieter than menu volume
+
 if (volumeSlider) {
   volumeSlider.addEventListener('input', () => {
     const v = volumeSlider.value / 100;
-    window.MenuMusic?.setVolume(v);
+    const mult = (gameState === 'playing') ? MUSIC_GAME_MULT : 1.0;
+    window.MenuMusic?.setVolume(v * mult);
     if (btnMute) btnMute.textContent = v === 0 ? '🔇' : '🔊';
   });
 }
@@ -2318,6 +2321,7 @@ function winGame(winnerName, isLocal) {
 function returnToLobby() {
   window.GameMusic?.stop();
   window.MenuMusic?.start();
+  window.MenuMusic?.setVolume((volumeSlider?.value ?? 38) / 100);
   gameState  = 'lobby';
   localLives = 3 + (hasArmor ? 1 : 0);
   isGhost    = false;
@@ -2403,6 +2407,7 @@ function startGame(seed, broadcast) {
   clearWindStreaks();
   hideEventAnnouncement();
   window.GameMusic?.stop();
+  window.MenuMusic?.setVolume((volumeSlider?.value ?? 38) / 100 * MUSIC_GAME_MULT);
   // Clear any leftover items and reset spawn timer
   for (const it of groundItems) scene.remove(it.group);
   groundItems.length = 0;
