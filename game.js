@@ -1989,6 +1989,9 @@ let goblinDropIdx     = 0;
 let goblinSchedule    = null;       // { startX, startZ, drops:[{x,z,type}] }
 let goblinFleeTargetX = 0;
 let goblinFleeTargetZ = 0;
+let goblinJumpTargetX = 0;
+let goblinJumpTargetZ = 0;
+let goblinY           = 0;   // world Y, managed separately from group.position.y
 let goblinEventElapsed = 0;
 
 const GHOST_KNOCKBACK_H  = 55;
@@ -2485,6 +2488,7 @@ function beginEvent() {
     goblinDropIdx      = 0;
     goblinSubState     = 'dropping';
     goblinVelY         = 0;
+    goblinY            = 0;
     goblinEventElapsed = 0;
     goblinX            = goblinSchedule.startX;
     goblinZ            = goblinSchedule.startZ;
@@ -2988,40 +2992,109 @@ function despawnGoblin() {
   goblinArmL  = null; goblinArmR = null;
 }
 
+// Returns the solid tile whose centre is closest to (fromX, fromZ), or null.
+function findNearestSolidTile(fromX, fromZ) {
+  let best = null, bestDist = Infinity;
+  for (const t of tileObjects) {
+    if (t.state === 'solid') {
+      const d = Math.hypot(t.cx - fromX, t.cz - fromZ);
+      if (d < bestDist) { bestDist = d; best = t; }
+    }
+  }
+  return best;
+}
+
 function updateGoblinEvent(dt) {
   if (!goblinGroup) return;
   goblinEventElapsed += dt;
 
-  if (goblinSubState === 'dropping') {
-    // Safety: force flee if taking too long
-    if (goblinEventElapsed > GOBLIN_MAX_TIME) {
+  if (goblinSubState === 'jumping') {
+    // Arc physics — horizontal move toward jump target, vertical governed by gravity
+    goblinVelY -= GRAVITY * dt;
+    goblinY    += goblinVelY * dt;
+    const jdx = goblinJumpTargetX - goblinX, jdz = goblinJumpTargetZ - goblinZ;
+    const jdist = Math.hypot(jdx, jdz);
+    if (jdist > 0.25) {
+      // Speed ensures we always arrive (at least GOBLIN_SPEED, more if we're close)
+      const spd = Math.max(GOBLIN_SPEED * 1.5, jdist / 0.35);
+      goblinX += (jdx / jdist) * spd * dt;
+      goblinZ += (jdz / jdist) * spd * dt;
+      goblinAngle = Math.atan2(jdx / jdist, jdz / jdist);
+    }
+    // Land when descending back to ground level
+    if (goblinVelY < 0 && goblinY <= 0) {
+      goblinY        = 0;
+      goblinVelY     = 0;
+      goblinX        = goblinJumpTargetX;
+      goblinZ        = goblinJumpTargetZ;
+      goblinSubState = 'dropping';
+    }
+
+  } else if (goblinSubState === 'dropping') {
+    if (goblinEventElapsed > GOBLIN_MAX_TIME || goblinDropIdx >= goblinSchedule.drops.length) {
+      // All drops done (or timed out) — flee
       goblinSubState = 'fleeing';
       goblinVelY     = 7;
-      _startGoblinFlee();
-    } else if (goblinDropIdx >= goblinSchedule.drops.length) {
-      goblinSubState = 'fleeing';
-      goblinVelY     = 7;
+      goblinY        = 0;
       _startGoblinFlee();
     } else {
-      const target = goblinSchedule.drops[goblinDropIdx];
-      const dx = target.x - goblinX, dz = target.z - goblinZ;
-      const dist = Math.sqrt(dx * dx + dz * dz);
-      if (dist < 0.55) {
-        // Drop item at this position
-        const itemId = 0x70000000 + eventCount * 200 + goblinDropIdx;
-        if (!groundItems.some(it => it.id === itemId)) {
-          const it = makeGroundItem(target.type, target.x, target.z, itemId);
-          groundItems.push(it);
-          sendItemEvent?.({ act: 'spawn', id: it.id, type: it.type, x: it.x, z: it.z });
-          window.SFX?.goblinDrop();
+      // ── Tile safety: if the tile we're standing on is sinking/gone, jump to safety ──
+      const curTile = getTileAt(goblinX, goblinZ);
+      if (!curTile || curTile.state === 'sinking' || curTile.state === 'gone') {
+        const safe = findNearestSolidTile(goblinX, goblinZ);
+        if (safe) {
+          goblinJumpTargetX = safe.cx;
+          goblinJumpTargetZ = safe.cz;
+          goblinSubState    = 'jumping';
+          goblinVelY        = 5.5;
+        } else {
+          // No tiles left at all — flee immediately
+          goblinSubState = 'fleeing';
+          goblinVelY = 7; goblinY = 0;
+          _startGoblinFlee();
         }
-        goblinDropIdx++;
       } else {
-        // Move toward target
-        const nx = dx / dist, nz = dz / dist;
-        goblinX += nx * GOBLIN_SPEED * dt;
-        goblinZ += nz * GOBLIN_SPEED * dt;
-        goblinAngle = Math.atan2(nx, nz);
+        // ── Find an effective target tile, redirecting if the original is gone ──
+        const drop = goblinSchedule.drops[goblinDropIdx];
+        let targetX = drop.x, targetZ = drop.z;
+        const tgt = getTileAt(targetX, targetZ);
+        if (!tgt || tgt.state !== 'solid') {
+          // Redirect: closest solid tile to the intended drop spot
+          const redir = findNearestSolidTile(targetX, targetZ);
+          if (redir) { targetX = redir.cx; targetZ = redir.cz; }
+          else       { goblinDropIdx++; } // no tiles left, skip this drop
+        }
+
+        const dx = targetX - goblinX, dz = targetZ - goblinZ;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+
+        if (dist < 0.55) {
+          // Arrived — drop item at goblin's current position
+          const itemId = 0x70000000 + eventCount * 200 + goblinDropIdx;
+          if (!groundItems.some(it => it.id === itemId)) {
+            const it = makeGroundItem(drop.type, goblinX, goblinZ, itemId);
+            groundItems.push(it);
+            sendItemEvent?.({ act: 'spawn', id: it.id, type: it.type, x: it.x, z: it.z });
+            window.SFX?.goblinDrop();
+          }
+          goblinDropIdx++;
+        } else {
+          // ── Look-ahead gap check: if the next step lands on a sinking/gone tile, jump ──
+          const nx = dx / dist, nz = dz / dist;
+          const stepX = goblinX + nx * 1.8, stepZ = goblinZ + nz * 1.8;
+          const stepTile = getTileAt(stepX, stepZ);
+          if (stepTile && (stepTile.state === 'sinking' || stepTile.state === 'gone')) {
+            // Gap ahead — jump directly to target tile
+            goblinJumpTargetX = targetX;
+            goblinJumpTargetZ = targetZ;
+            goblinSubState    = 'jumping';
+            goblinVelY        = 5.0;
+          } else {
+            goblinX += nx * GOBLIN_SPEED * dt;
+            goblinZ += nz * GOBLIN_SPEED * dt;
+            goblinAngle = Math.atan2(nx, nz);
+          }
+        }
       }
     }
 
@@ -3034,15 +3107,14 @@ function updateGoblinEvent(dt) {
       goblinZ += nz * GOBLIN_SPEED * GOBLIN_FLEE_MULT * dt;
       goblinAngle = Math.atan2(nx, nz);
     }
-    // Gravity once off platform
     goblinVelY -= GRAVITY * dt;
-    goblinGroup.position.y += goblinVelY * dt;
-    // Fade out as goblin falls — fully gone by y = -5
-    const fade = Math.max(0, Math.min(1, 1 + goblinGroup.position.y * 0.22));
+    goblinY    += goblinVelY * dt;
+    // Fade out as goblin falls — fully invisible by y = -5
+    const fade = Math.max(0, Math.min(1, 1 + goblinY * 0.22));
     goblinGroup.traverse(child => {
       if (child.isMesh && child.material) child.material.opacity = fade;
     });
-    if (goblinGroup.position.y < -5) {
+    if (goblinY < -5) {
       endEvent();
       return;
     }
@@ -3056,15 +3128,10 @@ function updateGoblinEvent(dt) {
   if (goblinArmL) goblinArmL.rotation.x = -swing * 0.65;
   if (goblinArmR) goblinArmR.rotation.x =  swing * 0.65;
 
-  // Position on ground (bob while running)
-  if (goblinSubState === 'dropping') {
-    const bob = Math.abs(Math.sin(goblinBobPhase)) * 0.18;
-    goblinGroup.position.set(goblinX, bob, goblinZ);
-  } else {
-    goblinGroup.position.x = goblinX;
-    goblinGroup.position.z = goblinZ;
-  }
-  // +Math.PI so the face (built facing local -Z) points in the direction of travel
+  // Y position: bob when running on ground, arc when jumping, gravity when fleeing
+  if (goblinSubState === 'dropping') goblinY = Math.abs(Math.sin(goblinBobPhase)) * 0.18;
+  goblinGroup.position.set(goblinX, goblinY, goblinZ);
+  // +Math.PI so the face (local -Z) always points in the direction of travel
   goblinGroup.rotation.y = goblinAngle + Math.PI;
 }
 
