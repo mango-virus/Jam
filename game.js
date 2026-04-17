@@ -2957,23 +2957,20 @@ function despawnHotPotato() {
 
 // ── GUMBALL CANNON ─────────────────────────────────────────────────────────
 
-const BUBBLE_COLORS = [0xff55aa, 0x55aaff, 0x55ee99, 0xff7722, 0xcc55ff];
-const BUBBLE_RADIUS = 0.50; // world bubble collision radius
+const BUBBLE_COLORS  = [0xff55aa, 0x55aaff, 0x55ee99, 0xff7722, 0xcc55ff];
+const BUBBLE_RADIUS  = 1.5;   // world bubble collision radius (big!)
+const GUMBALL_SCALE  = 4.0;   // machine is scaled up by this factor
 
 function generateGumballSchedule() {
   const shots = [];
-  let t = 2.0; // first shot fires 2s after machine lands
+  let t = 1.5; // first shot fires 1.5s after machine lands
   let s = (_gameSeed ^ (0xcafe0000 + eventCount * 0x6789)) >>> 0;
-  while (t < 82) {
+  while (t < 28) {
     s = (Math.imul(s, 1664525) + 1013904223) | 0;
-    t += 1.2 + ((s >>> 0) / 0x100000000) * 2.4;
-    s = (Math.imul(s, 1664525) + 1013904223) | 0;
-    const angle    = ((s >>> 0) / 0x100000000) * Math.PI * 2;
-    s = (Math.imul(s, 1664525) + 1013904223) | 0;
-    const speed    = 5 + ((s >>> 0) / 0x100000000) * 4;
+    t += 1.5 + ((s >>> 0) / 0x100000000) * 1.5; // 1.5–3.0 s between shots
     s = (Math.imul(s, 1664525) + 1013904223) | 0;
     const colorIdx = (s >>> 0) % BUBBLE_COLORS.length;
-    shots.push({ t, angle, speed, colorIdx });
+    shots.push({ t, colorIdx });
   }
   return shots;
 }
@@ -3059,7 +3056,7 @@ function makeWorldBubble(colorIdx) {
   grp.add(new THREE.Mesh(new THREE.SphereGeometry(BUBBLE_RADIUS, 14, 10), outerMat));
   // Inner gumball
   const innerMat = new THREE.MeshStandardMaterial({ color: col, roughness: 0.45, metalness: 0.2 });
-  grp.add(new THREE.Mesh(new THREE.SphereGeometry(0.18, 10, 8), innerMat));
+  grp.add(new THREE.Mesh(new THREE.SphereGeometry(0.55, 10, 8), innerMat));
   return grp;
 }
 
@@ -3069,25 +3066,53 @@ function makePlayerBubbleMesh() {
     metalness: 0.05, roughness: 0.02,
     emissive: new THREE.Color(0x55aaff), emissiveIntensity: 0.18,
   });
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.70, 16, 12), mat);
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(1.5, 16, 12), mat);
   mesh.position.y = 0.85; // centres on the player body (feet at y=0)
   return mesh;
 }
 
-function spawnGumball(angle, speed, colorIdx) {
+function spawnGumball(colorIdx) {
+  if (!gumballMachineGroup) return;
   const mx = gumballMachineGroup.position.x;
   const mz = gumballMachineGroup.position.z;
+
+  // Find the nearest non-dead, non-ghost target (local player + peers)
+  let tx = playerGroup.position.x, tz = playerGroup.position.z;
+  let bestDist = (isDead || isGhost) ? Infinity : Math.hypot(tx - mx, tz - mz);
+  for (const peer of peers.values()) {
+    if (peer.isGhost) continue;
+    const d = Math.hypot(peer.group.position.x - mx, peer.group.position.z - mz);
+    if (d < bestDist) {
+      bestDist = d;
+      tx = peer.group.position.x;
+      tz = peer.group.position.z;
+    }
+  }
+  if (bestDist === Infinity) return; // no valid targets
+
+  const dx = tx - mx, dz = tz - mz;
+  const dist = Math.hypot(dx, dz) || 1;
+  const nx = dx / dist, nz = dz / dist;
+
+  // Rotate machine to face target (nozzle is in local +X direction)
+  gumballMachineGroup.rotation.y = Math.atan2(-nz, nx);
+
+  // Small spread so it's aimed but not perfectly accurate
+  const spread = (Math.random() - 0.5) * 0.3;
+  const aimAngle = Math.atan2(nx, nz) + spread;
+
+  const speed = 10;
+  const by = gumballMachineGroup.position.y + 1.14 * GUMBALL_SCALE; // globe centre in world
   const grp = makeWorldBubble(colorIdx);
-  const bx = mx, by = 1.14, bz = mz; // spawn at globe centre
-  grp.position.set(bx, by, bz);
+  grp.position.set(mx, by, mz);
   scene.add(grp);
   gumballBubbles.push({
     group: grp,
-    x: bx, y: by, z: bz,
-    velX: Math.sin(angle) * speed,
-    velY: 0.7,
-    velZ: Math.cos(angle) * speed,
-    life: 6.0,
+    x: mx, y: by, z: mz,
+    velX: Math.sin(aimAngle) * speed,
+    velY: 1.5,
+    velZ: Math.cos(aimAngle) * speed,
+    life: 5.0,
   });
   window.SFX?.gumballShoot();
 }
@@ -3124,7 +3149,7 @@ function updateGumballEvent(dt) {
   while (gumballSchedIdx < gumballSchedule.length &&
          gumballSchedule[gumballSchedIdx].t <= gumballEventElapsed) {
     const s = gumballSchedule[gumballSchedIdx++];
-    spawnGumball(s.angle, s.speed, s.colorIdx);
+    spawnGumball(s.colorIdx);
   }
 
   // ── Update & cull world bubbles ──────────────────────────────────
@@ -3245,7 +3270,7 @@ function beginEvent() {
     nextTileTime          = Infinity;
     spawnLava();
   } else if (eventType === 'gumball_cannon') {
-    eventTimer = 95;
+    eventTimer = 30;
     gumballEventElapsed = 0;
     gumballSchedIdx     = 0;
     gumballSchedule     = generateGumballSchedule();
@@ -3258,7 +3283,8 @@ function beginEvent() {
     gumballFrozenTile.timer = 0;
     gumballFrozenTile.mesh.material.color.copy(gumballFrozenTile.solidColor);
     gumballMachineGroup = makeGumballMachine();
-    gumballMachineGroup.position.set(gumballFrozenTile.cx, 14, gumballFrozenTile.cz);
+    gumballMachineGroup.scale.setScalar(GUMBALL_SCALE);
+    gumballMachineGroup.position.set(gumballFrozenTile.cx, 30, gumballFrozenTile.cz);
     scene.add(gumballMachineGroup);
     gumballFalling  = true;
     gumballFallVelY = 0;
