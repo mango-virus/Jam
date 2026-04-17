@@ -2466,10 +2466,17 @@ async function setupMultiplayer() {
       if (data.type === 'pre_start') {
         // Host has started the countdown — show the waiting message so players can ready up
         preStartSeed    = data.seed;
-        preStartTimer   = 5.0;
+        preStartTimer   = 8.0;
         preStartIsHost  = false;
         showPreStartMsg(preStartTimer);
         updateMenuReadyList(); // lock the Start button for everyone
+      } else if (data.type === 'pre_start_cancel') {
+        // Host aborted the countdown (un-readied or no players left ready)
+        preStartTimer  = 0;
+        preStartSeed   = 0;
+        preStartIsHost = false;
+        showPreStartMsg(0);
+        updateMenuReadyList();
       } else if (data.type === 'start') {
         lastMatchSeed          = data.seed;
         lastMatchStartWallTime = Date.now();
@@ -5214,8 +5221,19 @@ function loop(now) {
     showPreStartMsg(preStartTimer);
     if (preStartTimer <= 0) {
       showPreStartMsg(0);
-      if (preStartIsHost) startGame(preStartSeed, true); // host fires the actual start
-      // non-host clients wait for the 'start' game event that startGame broadcasts
+      if (preStartIsHost) {
+        // At least one player must be ready; if nobody is, cancel instead of starting
+        const anyReady = localReady || [...peers.values()].some(p => p.ready && !p.spectating);
+        if (anyReady) {
+          startGame(preStartSeed, true);
+        } else {
+          preStartSeed   = 0;
+          preStartIsHost = false;
+          sendGameEvent?.({ type: 'pre_start_cancel' });
+          updateMenuReadyList();
+        }
+      }
+      // non-host clients: message hides above; they wait for 'start' or 'pre_start_cancel'
     }
   }
 
@@ -5764,6 +5782,14 @@ if (btnReady) {
     btnReady.textContent = localReady ? 'Cancel Ready' : 'Ready Up';
     btnReady.classList.toggle('is-ready', localReady);
     sendGameEvent?.({ type: 'ready', ready: localReady });
+    // If the host cancels ready during the countdown, abort the match entirely
+    if (!localReady && preStartIsHost && preStartTimer > 0) {
+      preStartTimer  = 0;
+      preStartSeed   = 0;
+      preStartIsHost = false;
+      showPreStartMsg(0);
+      sendGameEvent?.({ type: 'pre_start_cancel' });
+    }
     updateMenuReadyList();
   });
 }
@@ -5772,7 +5798,7 @@ if (btnStart) {
   btnStart.addEventListener('click', () => {
     if (!localReady || anyPeerInMatch() || preStartTimer > 0) return;
     preStartSeed    = Date.now() & 0xffffffff;
-    preStartTimer   = 5.0;
+    preStartTimer   = 8.0;
     preStartIsHost  = true;
     sendGameEvent?.({ type: 'pre_start', seed: preStartSeed });
     showPreStartMsg(preStartTimer);
