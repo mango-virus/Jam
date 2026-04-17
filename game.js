@@ -586,7 +586,7 @@ function makeCharacter(hexColor) {
   // (pointing forward like the sword/bat). Pieces are centred around y=0 so
   // the character grips the middle of the banana.
   const bananaGroup = new THREE.Group();
-  bananaGroup.position.set(0, -0.52, 0.10);
+  bananaGroup.position.set(0, -0.54, 0.22);
   bananaGroup.rotation.x = Math.PI / 2;
   bananaGroup.visible = false;
   const banMat  = new THREE.MeshStandardMaterial({ color: 0xffe135, roughness: 0.65 });
