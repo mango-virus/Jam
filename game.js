@@ -582,24 +582,29 @@ function makeCharacter(hexColor) {
   rightArm.add(batGroup);
 
   // Banana (shown in right hand when equipped)
+  // All pieces assembled in a sub-group along Y so they connect seamlessly,
+  // then the sub-group is tilted as one unit — same pattern as the bat.
   const bananaGroup = new THREE.Group();
-  bananaGroup.position.set(0.04, -0.44, 0.06);
+  bananaGroup.position.set(0, -0.44, 0.06);
   bananaGroup.visible = false;
   const banMat  = new THREE.MeshStandardMaterial({ color: 0xffe135, roughness: 0.65 });
   const bTipMat = new THREE.MeshStandardMaterial({ color: 0x7a5200, roughness: 0.8 });
-  // Three box segments forming a curve
-  const bs1 = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.21, 0.07), banMat);
-  bs1.position.set(0, -0.07, 0); bs1.rotation.z = 0.35; bananaGroup.add(bs1);
-  const bs2 = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.19, 0.065), banMat);
-  bs2.position.set(0.07, 0.09, 0); bs2.rotation.z = 0.04; bananaGroup.add(bs2);
-  const bs3 = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.15, 0.055), banMat);
-  bs3.position.set(0.12, 0.24, 0); bs3.rotation.z = -0.22; bananaGroup.add(bs3);
-  // Stem tip (bottom)
-  const bTip1 = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.055, 0.045), bTipMat);
-  bTip1.position.set(-0.03, -0.18, 0); bananaGroup.add(bTip1);
-  // Point tip (top)
-  const bTip2 = new THREE.Mesh(new THREE.BoxGeometry(0.038, 0.048, 0.038), bTipMat);
-  bTip2.position.set(0.155, 0.32, 0); bananaGroup.add(bTip2);
+  const bananaMesh = new THREE.Group();
+  // Stack pieces bottom-to-top with touching faces (each center = prev top + half of this height)
+  const bStem = new THREE.Mesh(new THREE.BoxGeometry(0.046, 0.06, 0.046), bTipMat);
+  bStem.position.y = 0.03; bananaMesh.add(bStem);                          // top at 0.06
+  const bB1 = new THREE.Mesh(new THREE.BoxGeometry(0.072, 0.20, 0.072), banMat);
+  bB1.position.y = 0.16; bananaMesh.add(bB1);                              // top at 0.26
+  const bB2 = new THREE.Mesh(new THREE.BoxGeometry(0.072, 0.18, 0.072), banMat);
+  bB2.position.y = 0.35; bananaMesh.add(bB2);                              // top at 0.44
+  const bB3 = new THREE.Mesh(new THREE.BoxGeometry(0.062, 0.15, 0.062), banMat);
+  bB3.position.y = 0.515; bananaMesh.add(bB3);                             // top at 0.59
+  const bPoint = new THREE.Mesh(new THREE.BoxGeometry(0.040, 0.056, 0.040), bTipMat);
+  bPoint.position.y = 0.618; bananaMesh.add(bPoint);
+  // Tilt the whole assembled banana to one side
+  bananaMesh.rotation.z = 0.48;
+  bananaMesh.position.set(-0.10, -0.32, 0);
+  bananaGroup.add(bananaMesh);
   rightArm.add(bananaGroup);
 
   normalBody.add(rightArm);
@@ -1198,18 +1203,23 @@ function makeGroundItem(type, x, z, id = nextItemId()) {
   } else if (type === 'banana') {
     const banMat2 = new THREE.MeshStandardMaterial({ color: 0xffe135, roughness: 0.65 });
     const tipMat2 = new THREE.MeshStandardMaterial({ color: 0x7a5200, roughness: 0.8 });
-    const seg1 = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.30, 0.10), banMat2);
-    seg1.position.set(0, 0.15, 0); seg1.rotation.z = 0.38; g.add(seg1);
-    const seg2 = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.28, 0.09), banMat2);
-    seg2.position.set(0.11, 0.37, 0); seg2.rotation.z = 0.08; g.add(seg2);
-    const seg3 = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.22, 0.08), banMat2);
-    seg3.position.set(0.19, 0.57, 0); seg3.rotation.z = -0.28; g.add(seg3);
-    const bTip1g = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.08, 0.07), tipMat2);
-    bTip1g.position.set(-0.05, 0.03, 0); g.add(bTip1g);
-    const bTip2g = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.07, 0.06), tipMat2);
-    bTip2g.position.set(0.24, 0.69, 0); g.add(bTip2g);
+    // Same sub-group pattern as the held version — stack along Y then tilt as one unit
+    const bMesh = new THREE.Group();
+    const gStem = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.085, 0.065), tipMat2);
+    gStem.position.y = 0.0425; bMesh.add(gStem);                           // top at 0.085
+    const gB1 = new THREE.Mesh(new THREE.BoxGeometry(0.105, 0.28, 0.105), banMat2);
+    gB1.position.y = 0.225; bMesh.add(gB1);                                // top at 0.365
+    const gB2 = new THREE.Mesh(new THREE.BoxGeometry(0.105, 0.26, 0.105), banMat2);
+    gB2.position.y = 0.495; bMesh.add(gB2);                                // top at 0.625
+    const gB3 = new THREE.Mesh(new THREE.BoxGeometry(0.090, 0.21, 0.090), banMat2);
+    gB3.position.y = 0.730; bMesh.add(gB3);                                // top at 0.835
+    const gPoint = new THREE.Mesh(new THREE.BoxGeometry(0.058, 0.080, 0.058), tipMat2);
+    gPoint.position.y = 0.875; bMesh.add(gPoint);
+    bMesh.rotation.z = 0.48;
+    bMesh.position.set(-0.18, 0.0, 0);
+    g.add(bMesh);
     const bGlow = new THREE.PointLight(0xffee00, 0.5, 2.0);
-    bGlow.position.y = 0.3; g.add(bGlow);
+    bGlow.position.y = 0.4; g.add(bGlow);
   } else { // glove
     const body = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8),
       new THREE.MeshStandardMaterial({ color: 0xcc2200, roughness: 0.55, metalness: 0.08 }));
