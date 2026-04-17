@@ -173,8 +173,16 @@ function rebuildArena(seed) {
   // angle (optional) stores the Y-rotation of the shape so OBB tests
   // can work in the shape's local frame instead of an inflated AABB.
   // hw/hd are LOCAL half-extents (before rotation).
-  function addEP(x, z, hw, hd, topY, angle = 0) {
-    elevatedPlatforms.push({ x, z, hw, hd, topY, angle });
+  // surfaceOnly=true  → registers as a walkable surface (getSurfaceBelow) but
+  //                      skips side-collision, so players can pass through freely
+  //                      from below.  Use this for seats / monitor tops / any
+  //                      elevated flat surface with open space underneath.
+  // surfaceOnly=false → full solid platform: side-blocks AND top-surface.
+  function addEP(x, z, hw, hd, topY, angle = 0, surfaceOnly = false) {
+    elevatedPlatforms.push({ x, z, hw, hd, topY, angle, surfaceOnly });
+  }
+  function addSurface(x, z, hw, hd, topY, angle = 0) {
+    addEP(x, z, hw, hd, topY, angle, true);
   }
 
   // ── Structure builders (toy theme — giant real-world objects) ────────
@@ -247,7 +255,9 @@ function rebuildArena(seed) {
     addMesh(new THREE.BoxGeometry(0.36*S, 0.34*S, 3.88*S), DARK, lsx, RY, lsz, ang);
     addMesh(new THREE.BoxGeometry(0.36*S, 0.34*S, 3.88*S), DARK, rsx, RY, rsz, ang);
 
-    // Seat board + cushion — no wide addEP so players can walk under the chair
+    // Seat board + cushion — surface-only EP so players can walk under freely
+    // but can land on the seat if they jump up to it
+    addSurface(x, z, SW/2, SD/2, SEAT_TOP+0.46*S, ang);
     addMesh(new THREE.BoxGeometry(SW, ST, SD), WOOD, x, SEAT_TOP-ST/2, z, ang);
     addMesh(new THREE.BoxGeometry(SW-0.65*S, 0.46*S, SD-0.65*S), CUSHION, x, SEAT_TOP+0.23*S, z, ang);
     for (const [ox,oz] of [[1.4*S,1.4*S],[-1.4*S,1.4*S],[1.4*S,-1.4*S],[-1.4*S,-1.4*S]]) {
@@ -280,8 +290,9 @@ function rebuildArena(seed) {
       addMesh(new THREE.CylinderGeometry(LEG_R*0.80, LEG_R*0.96, BH, 10), DARK, px, SEAT_TOP+BH/2, pz);
       addMesh(new THREE.SphereGeometry(LEG_R*1.22, 10, 8), DARK, px, SEAT_TOP+BH+LEG_R*1.22, pz);
     }
-    // Top rail — no addEP so players can walk under
+    // Top rail — surface-only EP so player can stand on top of the chair back
     const [bx,bz] = rp(0, SD/2-BT/2);
+    addSurface(bx, bz, SW/2, BT/2+0.26*S, SEAT_TOP+BH, ang);
     addMesh(new THREE.BoxGeometry(SW-0.36*S, 0.52*S, BT+0.06*S), DARK, bx, SEAT_TOP+BH-0.28*S, bz, ang);
     // 5 horizontal back slats
     for (let s = 0; s < 5; s++)
@@ -567,7 +578,8 @@ function rebuildArena(seed) {
     for (const [vx,vy] of [[0.4,0.4],[0.4,-0.4],[-0.4,0.4],[-0.4,-0.4]])
       addMesh(new THREE.CylinderGeometry(0.08*S,0.08*S,0.14*S,6), mkM(0x1A1A1A,0.9), bpX+vx*S*ca, SCR_Y-0.1*S+vy*S, bpZ+vx*S*sa);
 
-    // No top addEP — players can walk underneath the monitor
+    // Surface-only EP for monitor top — climbable but no side-collision below
+    addSurface(x, z, (SW+1.0*S)/2, SD/2+0.14*S, SCR_Y+SH/2+0.55*S+0.14*S, ang);
     addGlow(x, SCR_Y, z, 0.62, 1.0, 15);
     occupied.push({ x, z, r: (SW+1.0*S)/2+0.6*S });
   }
@@ -5128,6 +5140,7 @@ function loop(now) {
   // Uses OBB closest-point so rotated shapes (low wall, toppled column)
   // only collide against their actual footprint, not an inflated AABB.
   for (const ep of elevatedPlatforms) {
+    if (ep.surfaceOnly) continue; // walkable top only — no side collision
     const px = playerGroup.position.x, pz = playerGroup.position.z, py = playerGroup.position.y;
     if (py >= ep.topY) continue; // above the platform — no side collision
 
