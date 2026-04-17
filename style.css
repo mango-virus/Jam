@@ -537,6 +537,36 @@ kbd {
   cursor: not-allowed;
 }
 
+#btn-spectate {
+  background: #2a1a4a;
+  color: #c084fc;
+  border: 1px solid #7c3aed !important;
+}
+#btn-spectate:hover { background: rgba(124,58,237,0.3); }
+
+/* Spectator HUD — bottom-center overlay shown during spectator mode */
+#spectator-hud {
+  display: none;
+  position: fixed;
+  bottom: 2.2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  background: rgba(10, 4, 26, 0.78);
+  border: 1px solid rgba(192, 132, 252, 0.45);
+  backdrop-filter: blur(6px);
+  border-radius: 10px;
+  padding: 0.5rem 1.4rem;
+  color: #e9d5ff;
+  font-size: 0.92rem;
+  display: none;
+  align-items: center;
+  gap: 1rem;
+  pointer-events: none;
+}
+#spectator-label { font-weight: 600; }
+#spectator-hint  { opacity: 0.55; font-size: 0.8rem; }
+
 /* Game over box */
 #game-over-box {
   background: rgba(20, 4, 4, 0.96);

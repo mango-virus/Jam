@@ -2304,6 +2304,7 @@ function broadcastSelf() {
     ready:    localReady,
     hasArmor,
     bubble:   isBubbleTrapped,
+    inMatch:  gameState === 'playing',
   });
 }
 
@@ -2336,7 +2337,7 @@ function addPeer(id, data) {
   char.group.position.set(data.x ?? 0, 0, data.z ?? 0);
   char.group.rotation.y = data.rotY ?? 0;
   scene.add(char.group);
-  peers.set(id, { ...char, tx: data.x ?? 0, ty: data.y ?? 0, tz: data.z ?? 0, rotY: data.rotY ?? 0, moving: false, swing: 0, punchTimer: 0, blocking: false, username: data.username, redrawLabel, pSword: !!data.sword, pGlove: !!data.glove, pBat: !!data.bat, pBoots: !!data.boots, pShield: !!data.shield, pBanana: !!data.banana, pColor: data.color || 'ffffff', lives: data.lives ?? 3, isGhost: !!data.isGhost, hasArmor: !!data.hasArmor, ready: !!data.ready, pBubble: !!data.bubble, bubbleMesh: null });
+  peers.set(id, { ...char, tx: data.x ?? 0, ty: data.y ?? 0, tz: data.z ?? 0, rotY: data.rotY ?? 0, moving: false, swing: 0, punchTimer: 0, blocking: false, username: data.username, redrawLabel, pSword: !!data.sword, pGlove: !!data.glove, pBat: !!data.bat, pBoots: !!data.boots, pShield: !!data.shield, pBanana: !!data.banana, pColor: data.color || 'ffffff', lives: data.lives ?? 3, isGhost: !!data.isGhost, hasArmor: !!data.hasArmor, ready: !!data.ready, pBubble: !!data.bubble, bubbleMesh: null, inMatch: !!data.inMatch });
   updateMenuReadyList();
 }
 
@@ -2463,6 +2464,12 @@ async function setupMultiplayer() {
       } else if (data.type === 'ready') {
         const peer = peers.get(fromPeerId);
         if (peer) { peer.ready = !!data.ready; updateMenuReadyList(); }
+      } else if (data.type === 'gameover') {
+        // Spectators receive the match result and transition to the game-over screen
+        if (isSpectating) {
+          exitSpectatorMode();
+          winGame(data.winner, false);
+        }
       }
     });
 
@@ -2558,8 +2565,14 @@ async function setupMultiplayer() {
             peer.bubbleMesh = null;
           }
         }
-        if (gameState === 'lobby') updateMenuReadyList();
+        if (data.inMatch !== undefined) peer.inMatch = !!data.inMatch;
+        if (gameState === 'lobby') { updateMenuReadyList(); updateMenuSpectateBtn(); }
         if (gameState === 'playing') updatePeerLivesHUD();
+        // If spectating and our target left the match, auto-switch
+        if (isSpectating && spectateTarget === peerId && !peer.inMatch) {
+          spectateTarget = pickNextSpectateTarget(spectateTarget);
+          updateSpectatorHUD();
+        }
       }
       refreshPeerCount();
     });
@@ -2640,13 +2653,23 @@ if (menuVolSlider) {
 document.addEventListener('pointerlockchange', () => {
   isLocked = document.pointerLockElement === renderer.domElement;
   const hint = document.getElementById('hint');
-  if (hint) hint.textContent = isLocked
-    ? 'WASD · Shift sprint · Space jump · LMB punch/sword · RMB shield · E equip · Z drop'
-    : 'Click to capture mouse';
+  if (hint) {
+    if (isSpectating) {
+      hint.textContent = isLocked ? 'Mouse to orbit · LMB cycle player' : 'Click to capture mouse';
+    } else {
+      hint.textContent = isLocked
+        ? 'WASD · Shift sprint · Space jump · LMB punch/sword · RMB shield · E equip · Z drop'
+        : 'Click to capture mouse';
+    }
+  }
 });
 
 document.addEventListener('mousemove', e => {
   if (!isLocked) return;
+  if (isSpectating) {
+    spectateYaw -= e.movementX * 0.0025;
+    return;
+  }
   yaw   -= e.movementX * 0.0025;
   pitch += e.movementY * 0.0025;
   pitch  = Math.max(-0.6, Math.min(0.8, pitch));
@@ -2654,6 +2677,14 @@ document.addEventListener('mousemove', e => {
 
 document.addEventListener('mousedown', e => {
   if (!isLocked) return;
+  if (isSpectating) {
+    if (e.button === 0) {
+      // Cycle to the next spectated player
+      spectateTarget = pickNextSpectateTarget(spectateTarget);
+      updateSpectatorHUD();
+    }
+    return;
+  }
   if (e.button === 0) {
     if (hasBlackHoleGrenade && gameState === 'playing' && !isDead && !isGhost) {
       throwBlackHoleGrenade();
@@ -2926,8 +2957,15 @@ const livesHudEl = document.getElementById('lives-hud');
 const menuEl     = document.getElementById('menu');
 const gameOverEl = document.getElementById('game-over');
 const readyListEl = document.getElementById('ready-list');
-const btnReady   = document.getElementById('btn-ready');
-const btnStart   = document.getElementById('btn-start');
+const btnReady    = document.getElementById('btn-ready');
+const btnStart    = document.getElementById('btn-start');
+const btnSpectate = document.getElementById('btn-spectate');
+const spectatorHudEl   = document.getElementById('spectator-hud');
+const spectatorNameEl  = document.getElementById('spectator-name');
+
+let isSpectating   = false;
+let spectateTarget = null;   // peer ID currently being watched
+let spectateYaw    = 0;      // camera orbit angle around spectated player
 
 const deathEl      = document.getElementById('death-msg');
 const deathMsgSpan = deathEl?.querySelector('span');
@@ -3201,6 +3239,8 @@ function winGame(winnerName, isLocal) {
   if (isLocal) {
     localStorage.setItem('arenaHasArmor', '1');
   }
+  // Tell spectators (and late-joining peers) the match is over
+  sendGameEvent?.({ type: 'gameover', winner: winnerName });
   // Show overlay with live countdown
   if (gameOverEl) {
     document.getElementById('game-over-winner').textContent = `🏆 ${winnerName} wins!`;
@@ -3227,6 +3267,10 @@ function returnToLobby() {
   isGhost    = false;
   localReady = false;
   isDead     = false;
+  // Clean up spectator state if returning from spectating
+  isSpectating   = false;
+  spectateTarget = null;
+  if (spectatorHudEl) spectatorHudEl.style.display = 'none';
   // Restore player appearance
   exitGhostMode();
   hasArmor = localStorage.getItem('arenaHasArmor') === '1';
@@ -5355,6 +5399,23 @@ function loop(now) {
     );
     const lookY = playerGroup.position.y + 1 - Math.sin(pitch) * CAM_DIST * 0.5;
     camera.lookAt(playerGroup.position.x, lookY, playerGroup.position.z);
+  } else if (isSpectating) {
+    // Spectator camera — orbits around the watched player
+    const target = peers.get(spectateTarget);
+    if (target) {
+      const tp = target.group.position;
+      const SPEC_DIST = 9, SPEC_HEIGHT = 5;
+      camera.position.set(
+        tp.x + Math.sin(spectateYaw) * SPEC_DIST,
+        tp.y + SPEC_HEIGHT,
+        tp.z + Math.cos(spectateYaw) * SPEC_DIST
+      );
+      camera.lookAt(tp.x, tp.y + 1.0, tp.z);
+    } else {
+      // Target peer gone — try to find another
+      spectateTarget = pickNextSpectateTarget(null);
+      updateSpectatorHUD();
+    }
   } else {
     // Cinematic orbit camera for lobby and game over screens
     const orbitRadius = 52;
@@ -5509,6 +5570,54 @@ function loop(now) {
 // Menu setup
 // ------------------------------------------------------------------
 
+// Returns true if any connected peer is currently in a match
+function anyPeerInMatch() {
+  return [...peers.values()].some(p => p.inMatch);
+}
+
+// Show/hide spectate button and lock/unlock start button based on match state
+function updateMenuSpectateBtn() {
+  const inProgress = anyPeerInMatch();
+  if (btnSpectate) btnSpectate.style.display = inProgress ? '' : 'none';
+  // Start Game is also unavailable while a match is in progress
+  if (btnStart) btnStart.disabled = !localReady || inProgress;
+}
+
+// Return the next peer ID to spectate (cycles through in-match peers).
+// Pass null to get the first one.
+function pickNextSpectateTarget(currentId) {
+  const candidates = [...peers.entries()].filter(([, p]) => p.inMatch);
+  if (candidates.length === 0) return null;
+  if (!currentId) return candidates[0][0];
+  const idx = candidates.findIndex(([id]) => id === currentId);
+  return candidates[(idx + 1) % candidates.length][0];
+}
+
+function updateSpectatorHUD() {
+  if (!spectatorHudEl) return;
+  const peer = spectateTarget ? peers.get(spectateTarget) : null;
+  const name = peer?.username || '?';
+  if (spectatorNameEl) spectatorNameEl.textContent = name;
+  spectatorHudEl.style.display = isSpectating ? 'flex' : 'none';
+}
+
+function enterSpectatorMode() {
+  isSpectating   = true;
+  spectateTarget = pickNextSpectateTarget(null);
+  spectateYaw    = 0;
+  if (menuEl) menuEl.classList.remove('active');
+  updateSpectatorHUD();
+  // Use pointer lock so the mouse can orbit the camera
+  renderer.domElement.requestPointerLock();
+}
+
+function exitSpectatorMode() {
+  isSpectating   = false;
+  spectateTarget = null;
+  spectatorHudEl && (spectatorHudEl.style.display = 'none');
+  document.exitPointerLock();
+}
+
 function updateMenuReadyList() {
   if (!readyListEl) return;
   readyListEl.innerHTML = '';
@@ -5524,8 +5633,9 @@ function updateMenuReadyList() {
     e.innerHTML = `<span class="ready-dot ${peer.ready ? 'is-ready' : ''}"></span><span style="color:#${peer.pColor || 'ffffff'}">${peer.username || '?'}</span>`;
     readyListEl.appendChild(e);
   }
-  // Enable start button if local player is ready
-  if (btnStart) btnStart.disabled = !localReady;
+  // Enable start button only if ready AND no match is already in progress
+  if (btnStart) btnStart.disabled = !localReady || anyPeerInMatch();
+  updateMenuSpectateBtn();
 }
 
 if (btnReady) {
@@ -5541,9 +5651,17 @@ if (btnReady) {
 
 if (btnStart) {
   btnStart.addEventListener('click', () => {
-    if (!localReady) return;
+    if (!localReady || anyPeerInMatch()) return;
     const seed = Date.now() & 0xffffffff;
     startGame(seed, true);
+  });
+}
+
+if (btnSpectate) {
+  btnSpectate.addEventListener('click', () => {
+    if (!anyPeerInMatch()) return;
+    window.MenuMusic?.start();
+    enterSpectatorMode();
   });
 }
 

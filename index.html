@@ -31,6 +31,11 @@
 </div>
 <div id="event-announcement"></div>
 
+<div id="spectator-hud">
+  <span id="spectator-label">👁 Spectating: <strong id="spectator-name"></strong></span>
+  <span id="spectator-hint">LMB to switch player</span>
+</div>
+
 <div id="death-msg">
   <span>YOU FELL</span>
   <small>respawning…</small>
@@ -85,6 +90,7 @@
     <div id="menu-btns">
       <button id="btn-ready">Ready Up</button>
       <button id="btn-start" disabled>Start Game</button>
+      <button id="btn-spectate" style="display:none">👁 Spectate</button>
     </div>
     <div id="menu-music-ctrl">
       <button id="menu-btn-mute" title="Toggle music">🔊</button>
