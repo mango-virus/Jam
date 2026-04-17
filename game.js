@@ -1857,7 +1857,7 @@ if (btnMute) {
   });
 }
 
-const MUSIC_GAME_MULT = 0.30; // in-game music is 70% quieter than menu volume
+const MUSIC_GAME_MULT = 0.09; // in-game music is ~91% quieter than menu volume
 
 if (volumeSlider) {
   volumeSlider.addEventListener('input', () => {
