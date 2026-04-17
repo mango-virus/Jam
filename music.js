@@ -11,7 +11,7 @@
   let step        = 0;
   let nextTime    = 0;
   let timer       = null;
-  let volumeLevel = 0.12;
+  let volumeLevel = 0.036;
   let activeTrack = 0;
 
   // ── Shared audio helpers ────────────────────────────────────────
