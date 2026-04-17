@@ -1936,7 +1936,7 @@ const EVENT_ANNOUNCE_S      = 5;
 const RAIN_BANANAS_DURATION = 25;
 const fallingBananas        = [];   // { group, x, z, velY, peelId, rotVX, rotVZ }
 let eventCount              = 0;    // increments each time an event ends (for cycling)
-const EVENT_TYPES           = ['rain_bananas', 'clouds_alive'];
+const EVENT_TYPES           = ['clouds_alive', 'rain_bananas'];
 
 // --- Cloud event constants ---
 const CLOUD_ORBIT_R      = 32;   // radius of cloud orbit around arena
@@ -1961,6 +1961,8 @@ let cloudBlowTimer      = 0;
 let cloudDissipateTimer = 0;
 let cloudSchedule       = [];         // pre-generated circle durations for the 3 gusts
 const windStreaks        = [];         // { mesh, mat, velX, velZ, lifetime, maxLifetime }
+let cloudSmileParts     = [];         // mouth meshes shown while idle / circling
+let cloudBlowParts      = [];         // mouth meshes shown while blowing
 
 const GHOST_KNOCKBACK_H  = 55;
 const GHOST_KNOCKBACK_UP = 16;
@@ -2569,9 +2571,11 @@ function generateCloudSchedule() {
 // Build and add the cloud mesh to the scene.
 function spawnCloud() {
   cloudGroup = new THREE.Group();
+  cloudSmileParts.length = 0;
+  cloudBlowParts.length  = 0;
 
-  // Body — overlapping puff spheres
-  const cloudMat = new THREE.MeshStandardMaterial({ color: 0xd8d8f0, roughness: 0.95, metalness: 0 });
+  // Body — overlapping puff spheres (bright friendly white)
+  const cloudMat = new THREE.MeshStandardMaterial({ color: 0xeef0ff, roughness: 0.9, metalness: 0 });
   const puffs = [
     { x:  0.0,  y:  0.0,  z:  0.0,  r: 3.0 },
     { x: -2.4,  y: -0.3,  z:  0.3,  r: 2.2 },
@@ -2581,7 +2585,7 @@ function spawnCloud() {
     { x: -1.1,  y:  1.6,  z:  0.2,  r: 1.9 },
     { x:  1.1,  y:  1.7,  z:  0.2,  r: 1.7 },
     { x:  0.0,  y: -1.9,  z:  0.3,  r: 2.3 },
-    { x:  0.0,  y:  0.5,  z:  0.8,  r: 2.0 }, // back bulge
+    { x:  0.0,  y:  0.5,  z:  0.8,  r: 2.0 },
   ];
   for (const p of puffs) {
     const m = new THREE.Mesh(new THREE.SphereGeometry(p.r, 10, 7), cloudMat);
@@ -2589,39 +2593,72 @@ function spawnCloud() {
     cloudGroup.add(m);
   }
 
-  // Glowing eyes (face is at local -Z, so eyes are at z < 0)
-  const eyeMat = new THREE.MeshStandardMaterial({
-    color: 0xff1800, emissive: 0xff1800, emissiveIntensity: 2.5,
+  // Friendly eyes — white sclera + sky-blue iris + sparkle highlight
+  const irisMat = new THREE.MeshStandardMaterial({
+    color: 0x44aaff, emissive: 0x2266aa, emissiveIntensity: 0.6,
   });
-  for (const ex of [-1.1, 1.1]) {
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.38, 8, 6), eyeMat);
-    eye.position.set(ex, 0.45, -2.6);
-    cloudGroup.add(eye);
-    // Inner pupil (darker)
-    const pupil = new THREE.Mesh(
-      new THREE.SphereGeometry(0.18, 6, 5),
-      new THREE.MeshStandardMaterial({ color: 0x110000, emissive: 0x220000, emissiveIntensity: 1 })
-    );
-    pupil.position.set(ex, 0.45, -2.95);
+  const scleraMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+  const pupilMat  = new THREE.MeshStandardMaterial({ color: 0x112233 });
+  const sparkMat  = new THREE.MeshStandardMaterial({
+    color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1,
+  });
+  for (const ex of [-1.05, 1.05]) {
+    const sclera = new THREE.Mesh(new THREE.SphereGeometry(0.44, 9, 7), scleraMat);
+    sclera.position.set(ex, 0.5, -2.55);
+    cloudGroup.add(sclera);
+    const iris = new THREE.Mesh(new THREE.SphereGeometry(0.30, 8, 6), irisMat);
+    iris.position.set(ex, 0.5, -2.85);
+    cloudGroup.add(iris);
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.14, 6, 5), pupilMat);
+    pupil.position.set(ex, 0.5, -3.02);
     cloudGroup.add(pupil);
+    const spark = new THREE.Mesh(new THREE.SphereGeometry(0.07, 5, 4), sparkMat);
+    spark.position.set(ex + 0.13, 0.62, -3.08);
+    cloudGroup.add(spark);
   }
 
-  // Jagged mouth — alternating teeth heights
-  const mouthMat = new THREE.MeshStandardMaterial({ color: 0x0a0008 });
-  for (let i = 0; i < 8; i++) {
-    const toothH = i % 2 === 0 ? 0.7 : 0.45;
-    const toothY = i % 2 === 0 ? -0.75 : -0.95;
-    const tooth  = new THREE.Mesh(new THREE.BoxGeometry(0.38, toothH, 0.22), mouthMat);
-    tooth.position.set(-1.75 + i * 0.5, toothY, -2.6);
-    cloudGroup.add(tooth);
-  }
-  // Mouth backing (dark gap)
-  const mouthBg = new THREE.Mesh(
-    new THREE.BoxGeometry(4.2, 0.55, 0.15),
-    new THREE.MeshStandardMaterial({ color: 0x050005 })
+  // --- Smile mouth (visible while circling / preparing / dissipating) ---
+  const smileMat = new THREE.MeshStandardMaterial({ color: 0x4477aa });
+  const smileRing = new THREE.Mesh(
+    new THREE.TorusGeometry(0.95, 0.16, 7, 16, Math.PI),
+    smileMat
   );
-  mouthBg.position.set(0, -1.1, -2.55);
-  cloudGroup.add(mouthBg);
+  smileRing.position.set(0, -0.62, -2.62);
+  smileRing.rotation.z = Math.PI; // arc curves downward = smile
+  cloudGroup.add(smileRing);
+  cloudSmileParts.push(smileRing);
+
+  // Small rosy cheek circles
+  const cheekMat = new THREE.MeshStandardMaterial({
+    color: 0xffaacc, transparent: true, opacity: 0.55,
+  });
+  for (const cx of [-1.55, 1.55]) {
+    const cheek = new THREE.Mesh(new THREE.SphereGeometry(0.35, 7, 5), cheekMat);
+    cheek.position.set(cx, 0.08, -2.62);
+    cloudGroup.add(cheek);
+    cloudSmileParts.push(cheek);
+  }
+
+  // --- Blowing mouth (hidden until wind phase) — rounded "O" pursed lips ---
+  const blowMat = new THREE.MeshStandardMaterial({ color: 0x3366aa });
+  const blowRing = new THREE.Mesh(
+    new THREE.TorusGeometry(0.52, 0.20, 8, 14),
+    blowMat
+  );
+  blowRing.position.set(0, -0.68, -2.64);
+  blowRing.visible = false;
+  cloudGroup.add(blowRing);
+  cloudBlowParts.push(blowRing);
+
+  // Inner dark hole of the O mouth
+  const blowHole = new THREE.Mesh(
+    new THREE.CircleGeometry(0.32, 12),
+    new THREE.MeshStandardMaterial({ color: 0x112233 })
+  );
+  blowHole.position.set(0, -0.68, -2.84);
+  blowHole.visible = false;
+  cloudGroup.add(blowHole);
+  cloudBlowParts.push(blowHole);
 
   // Position and orient cloud, then add to scene
   cloudGroup.position.set(
@@ -2638,6 +2675,8 @@ function despawnCloud() {
   if (!cloudGroup) return;
   scene.remove(cloudGroup);
   cloudGroup = null;
+  cloudSmileParts.length = 0;
+  cloudBlowParts.length  = 0;
 }
 
 // Spawn a single wind-streak particle in the wind corridor.
@@ -2710,17 +2749,12 @@ function updateCloudEvent(dt) {
     }
 
   } else if (cloudSubState === 'preparing') {
-    // Cloud sits still and watches — eyes pulse
+    // Cloud sits still — builds up for the gust
     cloudPrepareTimer -= dt;
-    const pulse = 1.5 + Math.sin(cloudPrepareTimer * 8) * 1.5;
-    // Update emissive intensity on eye meshes (indices 9 and 11 = eye + pupil pairs)
-    cloudGroup.children.forEach(child => {
-      if (child.material && child.material.emissiveIntensity !== undefined &&
-          child.material.color.r > 0.5) {
-        child.material.emissiveIntensity = pulse;
-      }
-    });
     if (cloudPrepareTimer <= 0) {
+      // Swap to blowing mouth
+      for (const m of cloudSmileParts) m.visible = false;
+      for (const m of cloudBlowParts)  m.visible = true;
       cloudSubState  = 'blowing';
       cloudBlowTimer = CLOUD_BLOW_TIME;
       window.SFX?.windGust();
@@ -2750,6 +2784,9 @@ function updateCloudEvent(dt) {
 
     if (cloudBlowTimer <= 0) {
       clearWindStreaks();
+      // Swap back to smile
+      for (const m of cloudBlowParts)  m.visible = false;
+      for (const m of cloudSmileParts) m.visible = true;
       cloudGustCount++;
       if (cloudGustCount < CLOUD_GUSTS) {
         cloudSubState    = 'circling';
