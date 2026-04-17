@@ -2908,13 +2908,20 @@ function epContains(ep, x, z) {
 }
 
 // Returns the highest surface Y under (x, z), or null if nothing below.
-function getSurfaceBelow(x, z) {
+// playerY is the caller's current Y — used to gate surfaceOnly EPs so they
+// don't snap the player up from far below (which would cause instant teleport).
+function getSurfaceBelow(x, z, playerY = Infinity) {
   let best = null;
   // Main platform (only if tile hasn't fallen)
   if (onPlatform(x, z) && !isTileUnstable(x, z)) best = 0;
   // Elevated platforms — OBB test
   for (const ep of elevatedPlatforms) {
     if (epContains(ep, x, z)) {
+      // Surface-only EPs (chair seat, monitor top, etc.) must not snap the
+      // player upward from ground level.  Only register as ground when the
+      // player is already within 1.2 units above the surface, i.e. they
+      // arrived there by jumping, not by walking under the structure.
+      if (ep.surfaceOnly && playerY < ep.topY - 1.2) continue;
       if (best === null || ep.topY > best) best = ep.topY;
     }
   }
@@ -5233,13 +5240,13 @@ function loop(now) {
 
   // Walked off current surface — check if surface is no longer underfoot
   if (onGround && !hasFallenOff) {
-    const surf = getSurfaceBelow(playerGroup.position.x, playerGroup.position.z);
+    const surf = getSurfaceBelow(playerGroup.position.x, playerGroup.position.z, playerGroup.position.y);
     if (surf === null || surf < playerGroup.position.y - 0.1) onGround = false;
   }
 
   // Landing — snap to highest surface when descending through it
   if (!onGround && !hasFallenOff && velY <= 0) {
-    const surf = getSurfaceBelow(playerGroup.position.x, playerGroup.position.z);
+    const surf = getSurfaceBelow(playerGroup.position.x, playerGroup.position.z, playerGroup.position.y);
     if (surf !== null && playerGroup.position.y <= surf + 0.05) {
       playerGroup.position.y = surf;
       velY = 0;
