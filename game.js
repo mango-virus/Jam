@@ -116,6 +116,7 @@ const pillarLights      = []; // THREE.PointLight refs for teardown
 
 const CLIMB_SPEED   = 7.0;   // m/s upward when pressing into a climbable object
 const MAX_CLIMBABLE = 10.0;  // max height above current Y that can be climbed
+const EP_PLAYER_H   = 1.5;   // approx player height used for bottomY clearance check
 
 const elevatedPlatforms = []; // { x, z, hw, hd, topY } – collision data
 const epMeshes          = []; // THREE.Mesh refs for teardown
@@ -173,13 +174,16 @@ function rebuildArena(seed) {
   // angle (optional) stores the Y-rotation of the shape so OBB tests
   // can work in the shape's local frame instead of an inflated AABB.
   // hw/hd are LOCAL half-extents (before rotation).
-  // surfaceOnly=true  → registers as a walkable surface (getSurfaceBelow) but
-  //                      skips side-collision, so players can pass through freely
-  //                      from below.  Use this for seats / monitor tops / any
-  //                      elevated flat surface with open space underneath.
-  // surfaceOnly=false → full solid platform: side-blocks AND top-surface.
-  function addEP(x, z, hw, hd, topY, angle = 0, surfaceOnly = false) {
-    elevatedPlatforms.push({ x, z, hw, hd, topY, angle, surfaceOnly });
+  // surfaceOnly=true  → landing surface only (getSurfaceBelow), no side-collision.
+  //                      Kept for backward compat; prefer bottomY for new uses.
+  // bottomY (optional) → solid EP whose side-collision only activates when the
+  //                      player's head (py + EP_PLAYER_H) reaches the structure's
+  //                      bottom face.  Allows walking under tall structures while
+  //                      still making them climbable and solid at the right height.
+  //                      getSurfaceBelow also gates on topY proximity so the
+  //                      landing snap can't teleport from far below.
+  function addEP(x, z, hw, hd, topY, angle = 0, surfaceOnly = false, bottomY = null) {
+    elevatedPlatforms.push({ x, z, hw, hd, topY, angle, surfaceOnly, bottomY });
   }
   function addSurface(x, z, hw, hd, topY, angle = 0) {
     addEP(x, z, hw, hd, topY, angle, true);
@@ -255,9 +259,10 @@ function rebuildArena(seed) {
     addMesh(new THREE.BoxGeometry(0.36*S, 0.34*S, 3.88*S), DARK, lsx, RY, lsz, ang);
     addMesh(new THREE.BoxGeometry(0.36*S, 0.34*S, 3.88*S), DARK, rsx, RY, rsz, ang);
 
-    // Seat board + cushion — surface-only EP so players can walk under freely
-    // but can land on the seat if they jump up to it
-    addSurface(x, z, SW/2, SD/2, SEAT_TOP+0.46*S, ang);
+    // Seat board + cushion — solid EP with bottomY so players walk under freely
+    // (head at ~1.5, seat bottom at LEG_H ~4.2), but the seat is climbable and
+    // standable once the player jumps high enough to reach it
+    addEP(x, z, SW/2, SD/2, SEAT_TOP+0.46*S, ang, false, LEG_H);
     addMesh(new THREE.BoxGeometry(SW, ST, SD), WOOD, x, SEAT_TOP-ST/2, z, ang);
     addMesh(new THREE.BoxGeometry(SW-0.65*S, 0.46*S, SD-0.65*S), CUSHION, x, SEAT_TOP+0.23*S, z, ang);
     for (const [ox,oz] of [[1.4*S,1.4*S],[-1.4*S,1.4*S],[1.4*S,-1.4*S],[-1.4*S,-1.4*S]]) {
@@ -290,9 +295,10 @@ function rebuildArena(seed) {
       addMesh(new THREE.CylinderGeometry(LEG_R*0.80, LEG_R*0.96, BH, 10), DARK, px, SEAT_TOP+BH/2, pz);
       addMesh(new THREE.SphereGeometry(LEG_R*1.22, 10, 8), DARK, px, SEAT_TOP+BH+LEG_R*1.22, pz);
     }
-    // Top rail — surface-only EP so player can stand on top of the chair back
+    // Chair back — solid EP with bottomY at SEAT_TOP: invisible to players at
+    // floor level, but solid and climbable once they're up on the seat
     const [bx,bz] = rp(0, SD/2-BT/2);
-    addSurface(bx, bz, SW/2, BT/2+0.26*S, SEAT_TOP+BH, ang);
+    addEP(bx, bz, SW/2-0.14*S, BT/2+0.24*S, SEAT_TOP+BH, ang, false, SEAT_TOP);
     addMesh(new THREE.BoxGeometry(SW-0.36*S, 0.52*S, BT+0.06*S), DARK, bx, SEAT_TOP+BH-0.28*S, bz, ang);
     // 5 horizontal back slats
     for (let s = 0; s < 5; s++)
@@ -578,8 +584,11 @@ function rebuildArena(seed) {
     for (const [vx,vy] of [[0.4,0.4],[0.4,-0.4],[-0.4,0.4],[-0.4,-0.4]])
       addMesh(new THREE.CylinderGeometry(0.08*S,0.08*S,0.14*S,6), mkM(0x1A1A1A,0.9), bpX+vx*S*ca, SCR_Y-0.1*S+vy*S, bpZ+vx*S*sa);
 
-    // Surface-only EP for monitor top — climbable but no side-collision below
-    addSurface(x, z, (SW+1.0*S)/2, SD/2+0.14*S, SCR_Y+SH/2+0.55*S+0.14*S, ang);
+    // Solid EP for the entire monitor bezel body — bottomY is the bezel's bottom
+    // face so players can walk under at floor level but the screen blocks at
+    // the right height and is fully climbable
+    addEP(x, z, (SW+1.0*S)/2, SD/2+0.14*S, SCR_Y+SH/2+0.55*S+0.14*S, ang,
+          false, SCR_Y - SH/2 - 0.55*S);
     addGlow(x, SCR_Y, z, 0.62, 1.0, 15);
     occupied.push({ x, z, r: (SW+1.0*S)/2+0.6*S });
   }
@@ -2917,11 +2926,10 @@ function getSurfaceBelow(x, z, playerY = Infinity) {
   // Elevated platforms — OBB test
   for (const ep of elevatedPlatforms) {
     if (epContains(ep, x, z)) {
-      // Surface-only EPs (chair seat, monitor top, etc.) must not snap the
-      // player upward from ground level.  Only register as ground when the
-      // player is already within 1.2 units above the surface, i.e. they
-      // arrived there by jumping, not by walking under the structure.
-      if (ep.surfaceOnly && playerY < ep.topY - 1.2) continue;
+      // surfaceOnly and bottomY EPs can both be entered from below, so gate
+      // them: only register as ground when the player is within 1.2 units of
+      // the surface (arrived by jumping, not walking under from floor level).
+      if ((ep.surfaceOnly || ep.bottomY !== null) && playerY < ep.topY - 1.2) continue;
       if (best === null || ep.topY > best) best = ep.topY;
     }
   }
@@ -5149,6 +5157,9 @@ function loop(now) {
   for (const ep of elevatedPlatforms) {
     if (ep.surfaceOnly) continue; // walkable top only — no side collision
     const px = playerGroup.position.x, pz = playerGroup.position.z, py = playerGroup.position.y;
+    // bottomY EPs: skip collision until the player's head reaches the structure's
+    // lower face — player can walk freely under tall structures at floor level
+    if (ep.bottomY !== null && py + EP_PLAYER_H < ep.bottomY) continue;
     if (py >= ep.topY) continue; // above the platform — no side collision
 
     // Closest point on OBB to player XZ
