@@ -665,25 +665,22 @@ function makeCharacter(hexColor) {
     badge.position.set(0, 1.55, 0.24); normalBody.add(badge);
   }
 
-  // Armor group — chest plate, shoulder pads, helmet visor, hidden by default
+  // Armor group — chest plate (front + back) only, no helmet
   const armorGroup = new THREE.Group();
   const armorMat = new THREE.MeshStandardMaterial({ color: 0xb8c8d8, metalness: 0.85, roughness: 0.18 });
-  const chestPlate = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.5, 0.12), armorMat);
-  chestPlate.position.set(0, 0.68, 0.2);
-  armorGroup.add(chestPlate);
-  const lShoulder = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.18, 0.22), armorMat);
-  lShoulder.position.set(-0.38, 0.95, 0);
-  armorGroup.add(lShoulder);
-  const rShoulder = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.18, 0.22), armorMat);
-  rShoulder.position.set(0.38, 0.95, 0);
-  armorGroup.add(rShoulder);
-  const visor = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.14, 0.08),
-    new THREE.MeshStandardMaterial({ color: 0x4488ff, metalness: 0.9, roughness: 0.1, transparent: true, opacity: 0.75 }));
-  visor.position.set(0, 1.19, 0.21);
-  armorGroup.add(visor);
-  const helmet = new THREE.Mesh(new THREE.BoxGeometry(0.40, 0.18, 0.40), armorMat);
-  helmet.position.set(0, 1.32, 0);
-  armorGroup.add(helmet);
+  // Front chest plate
+  const chestFront = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.52, 0.10), armorMat);
+  chestFront.position.set(0, 0.68, 0.20);
+  armorGroup.add(chestFront);
+  // Back plate
+  const chestBack = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.52, 0.10), armorMat);
+  chestBack.position.set(0, 0.68, -0.20);
+  armorGroup.add(chestBack);
+  // Small ridge / trim strip across the front
+  const trim = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.04, 0.12),
+    new THREE.MeshStandardMaterial({ color: 0x8899aa, metalness: 0.9, roughness: 0.12 }));
+  trim.position.set(0, 0.90, 0.20);
+  armorGroup.add(trim);
   armorGroup.visible = false;
   normalBody.add(armorGroup);
 
