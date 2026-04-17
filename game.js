@@ -541,6 +541,11 @@ function makeCharacter(hexColor) {
   const sBlade = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.52, 0.034), sBladeMat);
   sBlade.position.y = 0.295;
   swordGroup.add(sBlade);
+  // Blade tip — 4-sided pyramid, flattened to match blade profile
+  const sTip = new THREE.Mesh(new THREE.CylinderGeometry(0, 0.05, 0.15, 4), sBladeMat);
+  sTip.position.y = 0.630; // flush with top of blade (0.555) + half tip height (0.075)
+  sTip.scale.z = 0.34;     // flatten Z to match blade thickness (0.034 / 0.10)
+  swordGroup.add(sTip);
   // Fuller — central channel running the length of the blade
   const sFuller = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.40, 0.038), sFullerMat);
   sFuller.position.y = 0.30;
@@ -1200,6 +1205,11 @@ function makeGroundItem(type, x, z, id = nextItemId()) {
     const gBlade = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.52, 0.034), gBladeMat);
     gBlade.position.y = 0.425;
     g.add(gBlade);
+    // Blade tip — 4-sided pyramid, flattened to match blade profile
+    const gTip = new THREE.Mesh(new THREE.CylinderGeometry(0, 0.05, 0.15, 4), gBladeMat);
+    gTip.position.y = 0.760; // flush with blade top (0.685) + half tip height (0.075)
+    gTip.scale.z = 0.34;
+    g.add(gTip);
     // Fuller
     const gFuller = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.40, 0.038), gFullerMat);
     gFuller.position.y = 0.43;
