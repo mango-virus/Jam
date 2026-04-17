@@ -2472,7 +2472,7 @@ async function setupMultiplayer() {
       if (data.act === 'place') {
         if (!bananaPeels.some(p => p.id === data.id)) {
           const group = makeBananaPeel(data.x, data.z, data.y ?? 0);
-          bananaPeels.push({ group, x: data.x, z: data.z, y: data.y ?? 0, id: data.id });
+          bananaPeels.push({ group, x: data.x, z: data.z, y: data.y ?? 0, id: data.id, fromRain: !!data.fromRain });
         }
       } else if (data.act === 'slip' || data.act === 'remove') {
         removePeelById(data.id);
@@ -4115,6 +4115,7 @@ function beginEvent() {
 
 function endEvent() {
   if (eventState !== 'running') return; // guard against double-call
+  const endingType = eventType;
   eventState = 'idle';
   eventType  = null;
   eventCount++;
@@ -4134,6 +4135,12 @@ function endEvent() {
   let s = (_gameSeed ^ (t * 0x9e3779b9 + eventCount)) >>> 0;
   s = (Math.imul(s, 1664525) + 1013904223) | 0;
   nextEventTime = gameTime + 30 + ((s >>> 0) / 0x100000000) * 30; // 30–60 s
+  // Rain bananas: give peels a 5-second countdown before they disappear
+  if (endingType === 'rain_bananas') {
+    for (const peel of bananaPeels) {
+      if (peel.fromRain) peel.fadeTimer = 5.0;
+    }
+  }
   hideEventAnnouncement();
 }
 
@@ -5064,9 +5071,9 @@ function loop(now) {
         if (fb.peelId !== null && !isTileUnstable(fb.x, fb.z) && getTileAt(fb.x, fb.z)) {
           if (!bananaPeels.some(p => p.id === fb.peelId)) {
             const g = makeBananaPeel(fb.x, fb.z, landY);
-            bananaPeels.push({ group: g, x: fb.x, z: fb.z, y: landY, id: fb.peelId });
+            bananaPeels.push({ group: g, x: fb.x, z: fb.z, y: landY, id: fb.peelId, fromRain: true });
             // Broadcast so peers with slight timing drift also see the peel land
-            sendPeel?.({ act: 'place', id: fb.peelId, x: fb.x, z: fb.z, y: landY });
+            sendPeel?.({ act: 'place', id: fb.peelId, x: fb.x, z: fb.z, y: landY, fromRain: true });
             window.SFX?.bananaPlace();
           }
         }
@@ -5400,13 +5407,24 @@ function loop(now) {
   }
 
 
-  // --- Banana peel tile-sinking removal ---
+  // --- Banana peel tile-sinking removal + rain-event fade ---
   for (let i = bananaPeels.length - 1; i >= 0; i--) {
     const peel = bananaPeels[i];
     if (isTileUnstable(peel.x, peel.z)) {
       scene.remove(peel.group);
       bananaPeels.splice(i, 1);
       sendPeel?.({ act: 'remove', id: peel.id });
+      continue;
+    }
+    if (peel.fadeTimer !== undefined) {
+      peel.fadeTimer -= dt;
+      // Flicker in the last 1.5 seconds as a warning
+      peel.group.visible = peel.fadeTimer > 1.5 || Math.sin(time * 18) > 0;
+      if (peel.fadeTimer <= 0) {
+        scene.remove(peel.group);
+        bananaPeels.splice(i, 1);
+        sendPeel?.({ act: 'remove', id: peel.id });
+      }
     }
   }
 
