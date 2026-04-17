@@ -3050,7 +3050,7 @@ function updatePeerLivesHUD() {
   if (gameState !== 'playing') { peerLivesHudEl.innerHTML = ''; return; }
   let html = '';
   for (const peer of peers.values()) {
-    if (peer.spectating) continue; // spectators have no lives to display
+    if (!peer.inMatch || peer.spectating) continue; // lobby/spectator peers have no lives to display
     const name   = peer.username || '?';
     const color  = '#' + (peer.pColor || 'ffffff');
     const maxLives = peer.hasArmor ? 4 : 3;
