@@ -35,26 +35,30 @@
       <label for="menu-name-input">Your name</label>
       <input id="menu-name-input" type="text" maxlength="32" autocomplete="off" spellcheck="false" placeholder="Enter name…" />
     </div>
-    <details id="rules">
+    <details id="rules" class="menu-section">
       <summary>How to play</summary>
       <ul>
         <li>🎯 <strong>Objective</strong> — knock every other player off the platform. Last one standing wins.</li>
         <li>❤️ <strong>Lives</strong> — each player starts with 3 lives. Lose them all and you become a ghost.</li>
-        <li>👊 <strong>Punch</strong> — <kbd>LMB</kbd> to punch nearby players and send them flying.</li>
         <li>🏃 <strong>Move</strong> — <kbd>WASD</kbd> to move, <kbd>Shift</kbd> to sprint, <kbd>Space</kbd> to jump.</li>
-        <li>⚔️ <strong>Items</strong> — weapons and shields randomly appear on the platform. Press <kbd>E</kbd> to pick one up. Drop with <kbd>Z</kbd>.
-          <ul style="margin-top:0.3rem;padding-left:1rem;display:flex;flex-direction:column;gap:0.25rem">
-            <li>⚔️ <strong>Sword</strong> — stronger knockback, 10 uses</li>
-            <li>🥊 <strong>Boxing Glove</strong> — massive knockback, 2 uses</li>
-            <li>🏏 <strong>Home Run Bat</strong> — 25% chance for a massive home run hit (with lightning!), otherwise light tap, 1 use</li>
-            <li>🚀 <strong>Rocket Boots</strong> — press <kbd>Space</kbd> while airborne for a double jump, 6 charges</li>
-            <li>🛡️ <strong>Shield</strong> — hold <kbd>RMB</kbd> to block hits, 7 uses</li>
-          </ul>
-        </li>
-        <li>🛡️ <strong>Block</strong> — hold <kbd>RMB</kbd> to raise your shield and absorb a punch.</li>
-        <li>👻 <strong>Ghost mode</strong> — ghosts fly freely and can deliver one massive punch every 7 seconds. Knock an alive player off and you come back with 1 life.</li>
-        <li>🏆 <strong>Armor</strong> — the winner earns armor, giving them an extra life in the next round.</li>
-        <li>⚠️ <strong>Tiles</strong> — after 25 seconds the platform starts crumbling. Flashing tiles fall away — don't get caught!</li>
+        <li>👊 <strong>Punch</strong> — <kbd>LMB</kbd> to punch nearby players and send them flying.</li>
+        <li>🛡️ <strong>Block</strong> — equip a shield then hold <kbd>RMB</kbd> to absorb a punch.</li>
+        <li>👻 <strong>Ghost mode</strong> — ghosts fly freely and can land one massive punch every 7 s. Knock an alive player off to return with 1 life.</li>
+        <li>🏆 <strong>Armor</strong> — the winner earns armor, giving them an extra life next round.</li>
+        <li>⚠️ <strong>Tiles</strong> — after 25 s the platform starts crumbling. Flashing tiles are about to fall!</li>
+      </ul>
+    </details>
+
+    <details id="items-section" class="menu-section">
+      <summary>Items &amp; Power-Ups</summary>
+      <ul>
+        <li class="item-pickup-hint">Press <kbd>E</kbd> near an item to pick it up &nbsp;·&nbsp; <kbd>Z</kbd> to drop</li>
+        <li>⚔️ <strong>Sword</strong> — boosts knockback on every hit. 10 uses.</li>
+        <li>🥊 <strong>Boxing Glove</strong> — enormous knockback, sends opponents flying. 2 uses.</li>
+        <li>🏏 <strong>Home Run Bat</strong> — 25% chance to launch the target skyward with a lightning strike; otherwise a light tap. 1 use.</li>
+        <li>🚀 <strong>Rocket Boots</strong> — press <kbd>Space</kbd> while airborne for a powerful double jump. Worn on the feet so they don't replace hand weapons. 6 charges.</li>
+        <li>🛡️ <strong>Shield</strong> — hold <kbd>RMB</kbd> to block incoming hits. 7 uses.</li>
+        <li class="item-pickup-hint" style="margin-top:0.2rem">Items vanish after 20 s if not picked up. Max 5 on the platform at once.</li>
       </ul>
     </details>
     <div id="ready-list"></div>

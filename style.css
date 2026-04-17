@@ -247,16 +247,16 @@ body > canvas {
   border-radius: 2px;
 }
 
-/* Rules section */
-#rules {
+/* Collapsible menu sections (How to Play + Items & Power-Ups) */
+.menu-section {
   text-align: left;
-  margin-bottom: 1.2rem;
+  margin-bottom: 0.75rem;
   border: 1px solid rgba(198,75,255,0.25);
   border-radius: 8px;
   overflow: hidden;
 }
 
-#rules summary {
+.menu-section summary {
   cursor: pointer;
   padding: 0.55rem 0.9rem;
   font-size: 0.88rem;
@@ -269,17 +269,17 @@ body > canvas {
   align-items: center;
   gap: 0.4rem;
 }
-#rules summary::-webkit-details-marker { display: none; }
-#rules summary::before {
+.menu-section summary::-webkit-details-marker { display: none; }
+.menu-section summary::before {
   content: '▶';
   font-size: 0.65rem;
   transition: transform 0.2s;
   display: inline-block;
 }
-#rules[open] summary::before { transform: rotate(90deg); }
-#rules summary:hover { background: rgba(198,75,255,0.07); }
+.menu-section[open] summary::before { transform: rotate(90deg); }
+.menu-section summary:hover { background: rgba(198,75,255,0.07); }
 
-#rules ul {
+.menu-section ul {
   margin: 0;
   padding: 0.5rem 1rem 0.8rem 1.2rem;
   list-style: none;
@@ -289,14 +289,21 @@ body > canvas {
   border-top: 1px solid rgba(198,75,255,0.15);
 }
 
-#rules li {
+.menu-section li {
   font-size: 0.82rem;
   color: var(--fg);
   opacity: 0.85;
   line-height: 1.45;
 }
 
-#rules strong { color: var(--fg); opacity: 1; }
+.menu-section strong { color: var(--fg); opacity: 1; }
+
+/* Subtle hint rows inside the items section */
+.item-pickup-hint {
+  font-size: 0.78rem !important;
+  opacity: 0.55 !important;
+  font-style: italic;
+}
 
 kbd {
   display: inline-block;
