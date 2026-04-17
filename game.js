@@ -2421,7 +2421,7 @@ function respawn() {
   }
   velY = 0; velX = 0; velZ = 0; windVelX = 0; windVelZ = 0;
   onGround = false;
-  spawnImmunityTimer = 2.0;
+  spawnImmunityTimer = 3.0;
   if (deathEl) deathEl.style.display = 'none';
   // Clear bubble trap if caught while respawning
   if (isBubbleTrapped) popLocalBubble();
@@ -3178,7 +3178,7 @@ function updateGumballEvent(dt) {
       if (Math.sqrt(dx*dx + dy*dy + dz*dz) < BUBBLE_RADIUS + 0.42) {
         // Trap!
         isBubbleTrapped  = true;
-        bubbleTrappedTimer = 4.0;
+        bubbleTrappedTimer = 2.0;
         bubbleDriftX     = b.velX * 0.40;
         bubbleDriftZ     = b.velZ * 0.40;
         velY             = Math.max(velY, 2.8); // float upward
