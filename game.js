@@ -115,7 +115,7 @@ const pillarMeshes      = []; // THREE.Mesh refs for teardown
 const pillarLights      = []; // THREE.PointLight refs for teardown
 
 const CLIMB_SPEED   = 7.0;   // m/s upward when pressing into a climbable object
-const MAX_CLIMBABLE = 10.0;  // max height above current Y that can be climbed
+const MAX_CLIMBABLE = 15.0;  // max height above current Y that can be climbed
 const EP_PLAYER_H   = 1.5;   // approx player height used for bottomY clearance check
 
 const elevatedPlatforms = []; // { x, z, hw, hd, topY } – collision data
@@ -5134,6 +5134,7 @@ function loop(now) {
 
   // vs pillars — climb if top is within reach, otherwise push out
   for (const p of pillarData) {
+    if (playerGroup.position.y < -0.1) continue; // below platform — no structure collision
     const ov = circleOverlap(playerGroup.position.x, playerGroup.position.z, p.x, p.z, p.r + PLAYER_R);
     if (ov) {
       const heightDiff = p.topY - playerGroup.position.y;
@@ -5157,10 +5158,8 @@ function loop(now) {
   for (const ep of elevatedPlatforms) {
     if (ep.surfaceOnly) continue; // walkable top only — no side collision
     const px = playerGroup.position.x, pz = playerGroup.position.z, py = playerGroup.position.y;
-    // bottomY EPs: skip collision until the player's head reaches the structure's
-    // lower face — player can walk freely under tall structures at floor level
-    if (ep.bottomY !== null && py + EP_PLAYER_H < ep.bottomY) continue;
-    if (py >= ep.topY) continue; // above the platform — no side collision
+    if (py < -0.1) continue; // below the platform — no structure collision
+    if (py >= ep.topY) continue; // above this platform — no side collision
 
     // Closest point on OBB to player XZ
     let cx, cz;
@@ -5183,8 +5182,15 @@ function loop(now) {
     const dist2 = dx * dx + dz * dz;
     if (dist2 >= PLAYER_R * PLAYER_R) continue;
     const dist = Math.sqrt(dist2);
+
+    // bottomY gate — only skip when the player's centre is INSIDE the footprint
+    // (dist≈0, they're passing through empty space under the structure).
+    // When touching the outside edge (dist > 0) the gate is bypassed so the
+    // player can start climbing from any side at any height.
+    if (ep.bottomY !== null && dist < 0.001 && py + EP_PLAYER_H < ep.bottomY) continue;
+
     const heightDiff = ep.topY - py;
-    if (heightDiff > 0.5 && heightDiff <= MAX_CLIMBABLE) {
+    if (heightDiff > 0.1 && heightDiff <= MAX_CLIMBABLE) {
       // Climbing: boost upward + full push-out so sprinting can't clip through
       if (velY < CLIMB_SPEED) velY = CLIMB_SPEED;
       onGround = false;
