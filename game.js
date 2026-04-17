@@ -746,6 +746,10 @@ function rebuildArena(seed) {
       tipMesh.quaternion.copy(tipQ);
       tipMesh.castShadow = true; tipMesh.receiveShadow = true;
       scene.add(tipMesh); pillarMeshes.push(tipMesh);
+      // Collision — OBB centred between blunt end and tip point
+      const cepCX = sx + sDirX * CTIP * 0.5;
+      const cepCZ = sz + sDirZ * CTIP * 0.5;
+      addEP(cepCX, cepCZ, (cL + CTIP) * 0.5, CR, 0.50*S + CR, sDir);
     }
 
     addEP(x, z, BW/2, BD/2, BH, boxAng);
