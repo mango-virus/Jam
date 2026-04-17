@@ -582,29 +582,31 @@ function makeCharacter(hexColor) {
   rightArm.add(batGroup);
 
   // Banana (shown in right hand when equipped)
-  // All pieces assembled in a sub-group along Y so they connect seamlessly,
-  // then the sub-group is tilted as one unit — same pattern as the bat.
+  // Each piece has its own rotation.z that changes progressively, and positions
+  // are chain-computed so every piece's bottom exactly meets the previous piece's top.
+  // This creates a proper crescent arc instead of a straight stick.
+  // Formula: given piece i with center (cx,cy), rot α, height h:
+  //   top = (cx - h/2·sin(α),  cy + h/2·cos(α))
+  //   next bottom = top, so next_cx = top_x + next_h/2·sin(next_α)
   const bananaGroup = new THREE.Group();
-  bananaGroup.position.set(0, -0.44, 0.06);
+  bananaGroup.position.set(0.02, -0.52, 0.06); // grip point at the wrist/hand
   bananaGroup.visible = false;
   const banMat  = new THREE.MeshStandardMaterial({ color: 0xffe135, roughness: 0.65 });
   const bTipMat = new THREE.MeshStandardMaterial({ color: 0x7a5200, roughness: 0.8 });
-  const bananaMesh = new THREE.Group();
-  // Stack pieces bottom-to-top with touching faces (each center = prev top + half of this height)
-  const bStem = new THREE.Mesh(new THREE.BoxGeometry(0.046, 0.06, 0.046), bTipMat);
-  bStem.position.y = 0.03; bananaMesh.add(bStem);                          // top at 0.06
-  const bB1 = new THREE.Mesh(new THREE.BoxGeometry(0.072, 0.20, 0.072), banMat);
-  bB1.position.y = 0.16; bananaMesh.add(bB1);                              // top at 0.26
-  const bB2 = new THREE.Mesh(new THREE.BoxGeometry(0.072, 0.18, 0.072), banMat);
-  bB2.position.y = 0.35; bananaMesh.add(bB2);                              // top at 0.44
-  const bB3 = new THREE.Mesh(new THREE.BoxGeometry(0.062, 0.15, 0.062), banMat);
-  bB3.position.y = 0.515; bananaMesh.add(bB3);                             // top at 0.59
-  const bPoint = new THREE.Mesh(new THREE.BoxGeometry(0.040, 0.056, 0.040), bTipMat);
-  bPoint.position.y = 0.618; bananaMesh.add(bPoint);
-  // Tilt the whole assembled banana to one side
-  bananaMesh.rotation.z = 0.48;
-  bananaMesh.position.set(-0.10, -0.32, 0);
-  bananaGroup.add(bananaMesh);
+  // Pieces: { cx, cy, rot, h, w, mat }  — chain-computed positions, arc from rot+0.55→-0.78
+  [
+    { cx: -0.013, cy:  0.020, rot:  0.55, h: 0.048, w: 0.044, mat: bTipMat },
+    { cx: -0.046, cy:  0.123, rot:  0.25, h: 0.170, w: 0.070, mat: banMat  },
+    { cx: -0.063, cy:  0.283, rot: -0.05, h: 0.155, w: 0.074, mat: banMat  },
+    { cx: -0.041, cy:  0.420, rot: -0.30, h: 0.125, w: 0.066, mat: banMat  },
+    { cx:  0.004, cy:  0.520, rot: -0.58, h: 0.095, w: 0.052, mat: banMat  },
+    { cx:  0.044, cy:  0.574, rot: -0.78, h: 0.042, w: 0.038, mat: bTipMat },
+  ].forEach(({ cx, cy, rot, h, w, mat }) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, w), mat);
+    m.position.set(cx, cy, 0);
+    m.rotation.z = rot;
+    bananaGroup.add(m);
+  });
   rightArm.add(bananaGroup);
 
   normalBody.add(rightArm);
@@ -1203,21 +1205,20 @@ function makeGroundItem(type, x, z, id = nextItemId()) {
   } else if (type === 'banana') {
     const banMat2 = new THREE.MeshStandardMaterial({ color: 0xffe135, roughness: 0.65 });
     const tipMat2 = new THREE.MeshStandardMaterial({ color: 0x7a5200, roughness: 0.8 });
-    // Same sub-group pattern as the held version — stack along Y then tilt as one unit
-    const bMesh = new THREE.Group();
-    const gStem = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.085, 0.065), tipMat2);
-    gStem.position.y = 0.0425; bMesh.add(gStem);                           // top at 0.085
-    const gB1 = new THREE.Mesh(new THREE.BoxGeometry(0.105, 0.28, 0.105), banMat2);
-    gB1.position.y = 0.225; bMesh.add(gB1);                                // top at 0.365
-    const gB2 = new THREE.Mesh(new THREE.BoxGeometry(0.105, 0.26, 0.105), banMat2);
-    gB2.position.y = 0.495; bMesh.add(gB2);                                // top at 0.625
-    const gB3 = new THREE.Mesh(new THREE.BoxGeometry(0.090, 0.21, 0.090), banMat2);
-    gB3.position.y = 0.730; bMesh.add(gB3);                                // top at 0.835
-    const gPoint = new THREE.Mesh(new THREE.BoxGeometry(0.058, 0.080, 0.058), tipMat2);
-    gPoint.position.y = 0.875; bMesh.add(gPoint);
-    bMesh.rotation.z = 0.48;
-    bMesh.position.set(-0.18, 0.0, 0);
-    g.add(bMesh);
+    // Same chain-computed arc as the held version, scaled 1.4×
+    [
+      { cx: -0.018, cy:  0.028, rot:  0.55, h: 0.067, w: 0.062, mat: tipMat2 },
+      { cx: -0.064, cy:  0.172, rot:  0.25, h: 0.238, w: 0.098, mat: banMat2 },
+      { cx: -0.088, cy:  0.396, rot: -0.05, h: 0.217, w: 0.104, mat: banMat2 },
+      { cx: -0.057, cy:  0.588, rot: -0.30, h: 0.175, w: 0.092, mat: banMat2 },
+      { cx:  0.005, cy:  0.728, rot: -0.58, h: 0.133, w: 0.073, mat: banMat2 },
+      { cx:  0.062, cy:  0.804, rot: -0.78, h: 0.059, w: 0.053, mat: tipMat2 },
+    ].forEach(({ cx, cy, rot, h, w, mat }) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, w), mat);
+      m.position.set(cx, cy, 0);
+      m.rotation.z = rot;
+      g.add(m);
+    });
     const bGlow = new THREE.PointLight(0xffee00, 0.5, 2.0);
     bGlow.position.y = 0.4; g.add(bGlow);
   } else { // glove
