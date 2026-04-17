@@ -535,5 +535,35 @@
     howl.start(t); howl.stop(t + dur);
   }
 
-  window.SFX = { punch, swordHit, gloveHit, batNormal, batHomeRun, shieldBlock, shieldBreak, itemBreak, pickup, die, respawn, ghostPunch, swordSwing, gloveSwing, batSwing, rocketBoost, bananaPlace, bananaSlip, windGust };
+  // ── GOBLIN DROP — quick coin-clink when goblin drops loot ────────
+  function goblinDrop() {
+    ensureCtx(); resume();
+    const t = ctx.currentTime;
+    // Coin clink — bell-like triangle tone
+    const o  = ctx.createOscillator();
+    const g  = ctx.createGain();
+    o.type   = 'triangle'; o.frequency.setValueAtTime(900, t);
+    o.frequency.exponentialRampToValueAtTime(460, t + 0.18);
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1400; bp.Q.value = 3.5;
+    o.connect(bp); bp.connect(g); g.connect(master);
+    env(g, t, 0.001, 0.008, 0.14, 0.65);
+    o.start(t); o.stop(t + 0.22);
+    // High shimmer — scatter of coins
+    const src = ctx.createBufferSource(); src.buffer = noise(0.1);
+    const hp  = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 3800;
+    const g2  = ctx.createGain();
+    src.connect(hp); hp.connect(g2); g2.connect(master);
+    env(g2, t, 0.001, 0.004, 0.07, 0.3);
+    src.start(t); src.stop(t + 0.1);
+    // Sub plop
+    const o2 = ctx.createOscillator();
+    const g3 = ctx.createGain();
+    o2.type  = 'sine'; o2.frequency.setValueAtTime(220, t);
+    o2.frequency.exponentialRampToValueAtTime(90, t + 0.1);
+    o2.connect(g3); g3.connect(master);
+    env(g3, t, 0.002, 0.005, 0.08, 0.4);
+    o2.start(t); o2.stop(t + 0.12);
+  }
+
+  window.SFX = { punch, swordHit, gloveHit, batNormal, batHomeRun, shieldBlock, shieldBreak, itemBreak, pickup, die, respawn, ghostPunch, swordSwing, gloveSwing, batSwing, rocketBoost, bananaPlace, bananaSlip, windGust, goblinDrop };
 })();

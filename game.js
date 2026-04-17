@@ -1936,7 +1936,7 @@ const EVENT_ANNOUNCE_S      = 5;
 const RAIN_BANANAS_DURATION = 25;
 const fallingBananas        = [];   // { group, x, z, velY, peelId, rotVX, rotVZ }
 let eventCount              = 0;    // increments each time an event ends (for cycling)
-const EVENT_TYPES           = ['clouds_alive', 'rain_bananas'];
+const EVENT_TYPES           = ['loot_goblin', 'clouds_alive', 'rain_bananas'];
 
 // --- Cloud event constants ---
 const CLOUD_ORBIT_R      = 32;   // radius of cloud orbit around arena
@@ -1950,6 +1950,12 @@ const CLOUD_DISSIPATE_S  = 2.5;  // fade-out duration
 const WIND_WIDTH         = 14;   // full width of wind corridor (units)
 const WIND_ACCEL         = 55;   // acceleration applied while in corridor (units/s²)
 const WIND_MAX_SPEED     = 13;   // wind velocity cap — sprint (11 u/s) can fight this
+
+// --- Goblin event constants ---
+const GOBLIN_SPEED     = 9.0;  // units/s (below player sprint so you can barely chase it)
+const GOBLIN_FLEE_MULT = 1.8;  // speed multiplier when fleeing
+const GOBLIN_NUM_DROPS = 10;   // items dropped before goblin flees
+const GOBLIN_MAX_TIME  = 32;   // safety: force flee if dropping phase runs too long
 
 // --- Cloud event state ---
 let cloudGroup          = null;       // THREE.Group | null
@@ -1966,6 +1972,24 @@ let cloudSmileParts     = [];         // mouth meshes shown while idle / circlin
 let cloudBlowParts      = [];         // mouth meshes shown while blowing
 let windVelX            = 0;          // wind-push velocity, separate from punch knockback
 let windVelZ            = 0;
+
+// --- Goblin event state ---
+let goblinGroup       = null;
+let goblinLegL        = null;  // animated limb refs
+let goblinLegR        = null;
+let goblinArmL        = null;
+let goblinArmR        = null;
+let goblinX           = 0;
+let goblinZ           = 0;
+let goblinVelY        = 0;
+let goblinAngle       = 0;
+let goblinBobPhase    = 0;
+let goblinSubState    = 'dropping'; // 'dropping' | 'fleeing'
+let goblinDropIdx     = 0;
+let goblinSchedule    = null;       // { startX, startZ, drops:[{x,z,type}] }
+let goblinFleeTargetX = 0;
+let goblinFleeTargetZ = 0;
+let goblinEventElapsed = 0;
 
 const GHOST_KNOCKBACK_H  = 55;
 const GHOST_KNOCKBACK_UP = 16;
@@ -2247,6 +2271,7 @@ function returnToLobby() {
   for (const fb of fallingBananas) scene.remove(fb.group);
   fallingBananas.length = 0;
   despawnCloud();
+  despawnGoblin();
   clearWindStreaks();
   hideEventAnnouncement();
   // Move player to lobby
@@ -2298,6 +2323,7 @@ function startGame(seed, broadcast) {
   fallingBananas.length = 0;
   eventCount = 0;
   despawnCloud();
+  despawnGoblin();
   clearWindStreaks();
   hideEventAnnouncement();
   window.GameMusic?.stop();
@@ -2414,6 +2440,10 @@ function doPunch() {
 // ------------------------------------------------------------------
 
 const EVENT_INFO = {
+  loot_goblin: {
+    name: "💰 A Loot Goblin Has Appeared!",
+    sub:  "Catch it before it gets away — it's dropping loot everywhere!",
+  },
   rain_bananas: {
     name: "🍌 It's Raining Bananas!",
     sub:  'Watch out — banana peels are falling from the sky!',
@@ -2449,7 +2479,19 @@ function triggerEvent(type) {
 function beginEvent() {
   eventState = 'running';
   hideEventAnnouncement();
-  if (eventType === 'rain_bananas') {
+  if (eventType === 'loot_goblin') {
+    eventTimer         = 90; // safety fallback
+    goblinSchedule     = generateGoblinSchedule();
+    goblinDropIdx      = 0;
+    goblinSubState     = 'dropping';
+    goblinVelY         = 0;
+    goblinEventElapsed = 0;
+    goblinX            = goblinSchedule.startX;
+    goblinZ            = goblinSchedule.startZ;
+    goblinAngle        = 0;
+    goblinBobPhase     = 0;
+    spawnGoblin();
+  } else if (eventType === 'rain_bananas') {
     eventTimer       = RAIN_BANANAS_DURATION;
     rainEventElapsed = 0;
     rainScheduleIdx  = 0;
@@ -2458,7 +2500,7 @@ function beginEvent() {
     eventTimer = 120; // safety fallback — cloud self-terminates via sub-state machine
     cloudSchedule  = generateCloudSchedule();
     cloudGustCount = 0;
-    // Deterministic start angle from seed + eventCount
+    // Deterministic start angle
     { let s = (_gameSeed ^ (0xc10d0000 + eventCount)) >>> 0;
       s = (Math.imul(s, 1664525) + 1013904223) | 0;
       cloudAngle = ((s >>> 0) / 0x100000000) * Math.PI * 2; }
@@ -2817,6 +2859,222 @@ function updateCloudEvent(dt) {
   }
 }
 
+// ------------------------------------------------------------------
+// Goblin event helpers
+// ------------------------------------------------------------------
+
+function generateGoblinSchedule() {
+  let s = (_gameSeed ^ (0x90b11000 + eventCount * 13)) >>> 0;
+  function r() { s = (Math.imul(s, 1664525) + 1013904223) | 0; return (s >>> 0) / 0x100000000; }
+  const margin = 4;
+  const half   = PLATFORM_HALF - margin;
+  const TYPES  = ['sword', 'glove', 'bat', 'shield', 'boots', 'banana'];
+  const startX = (r() * 2 - 1) * half * 0.4;
+  const startZ = (r() * 2 - 1) * half * 0.4;
+  const drops  = [];
+  for (let i = 0; i < GOBLIN_NUM_DROPS; i++) {
+    drops.push({
+      x:    (r() * 2 - 1) * half,
+      z:    (r() * 2 - 1) * half,
+      type: TYPES[Math.floor(r() * TYPES.length)],
+    });
+  }
+  return { startX, startZ, drops };
+}
+
+function spawnGoblin() {
+  goblinGroup = new THREE.Group();
+
+  const skinMat  = new THREE.MeshStandardMaterial({ color: 0x44bb22, roughness: 0.8 });
+  const darkMat  = new THREE.MeshStandardMaterial({ color: 0x228811, roughness: 0.8 });
+  const bagMat   = new THREE.MeshStandardMaterial({ color: 0x7a4a1e, roughness: 0.9 });
+  const eyeWhMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+  const eyePuMat = new THREE.MeshStandardMaterial({
+    color: 0x111122, emissive: 0x000033, emissiveIntensity: 0.5,
+  });
+  const grinMat  = new THREE.MeshStandardMaterial({ color: 0x1a0a00 });
+
+  // Body (slightly hunched — taller in front)
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.38, 0.28), skinMat);
+  body.position.y = 0.52;
+  body.rotation.x = 0.18; // lean forward
+  goblinGroup.add(body);
+
+  // Head
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.24, 9, 7), skinMat);
+  head.position.y = 0.96;
+  goblinGroup.add(head);
+
+  // Pointy ears
+  for (const ex of [-0.24, 0.24]) {
+    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.26, 5), skinMat);
+    ear.position.set(ex, 1.01, 0.02);
+    ear.rotation.z = ex > 0 ? 0.55 : -0.55;
+    goblinGroup.add(ear);
+  }
+
+  // Eyes (wide, mischievous — beady)
+  for (const ex of [-0.10, 0.10]) {
+    const sclera = new THREE.Mesh(new THREE.SphereGeometry(0.058, 6, 5), eyeWhMat);
+    sclera.position.set(ex, 0.98, -0.20);
+    goblinGroup.add(sclera);
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.034, 5, 4), eyePuMat);
+    pupil.position.set(ex, 0.98, -0.23);
+    goblinGroup.add(pupil);
+  }
+
+  // Big bulbous nose
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.07, 6, 5), skinMat);
+  nose.position.set(0, 0.90, -0.22);
+  goblinGroup.add(nose);
+
+  // Wide toothy grin
+  const grinBar = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.038, 0.06), grinMat);
+  grinBar.position.set(0, 0.80, -0.21);
+  goblinGroup.add(grinBar);
+  // Two little white teeth
+  const toothMat = new THREE.MeshStandardMaterial({ color: 0xeeeedd });
+  for (const tx of [-0.04, 0.04]) {
+    const tooth = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.055, 0.04), toothMat);
+    tooth.position.set(tx, 0.775, -0.22);
+    goblinGroup.add(tooth);
+  }
+
+  // Treasure bag on back
+  const bag = new THREE.Mesh(new THREE.SphereGeometry(0.24, 7, 6), bagMat);
+  bag.position.set(0.05, 0.58, 0.24);
+  bag.scale.set(1, 1.15, 0.85);
+  goblinGroup.add(bag);
+  const bagKnot = new THREE.Mesh(new THREE.SphereGeometry(0.07, 5, 4),
+    new THREE.MeshStandardMaterial({ color: 0xd4a044, metalness: 0.5, roughness: 0.5 }));
+  bagKnot.position.set(0.05, 0.78, 0.22);
+  goblinGroup.add(bagKnot);
+  // Gold coins spilling out hint
+  for (let i = 0; i < 3; i++) {
+    const coin = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.018, 7),
+      new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.9, roughness: 0.2 }));
+    coin.position.set(0.05 + (i - 1) * 0.06, 0.62 + i * 0.025, 0.34 - i * 0.02);
+    coin.rotation.x = 0.8 + i * 0.3;
+    goblinGroup.add(coin);
+  }
+
+  // Arms (will be animated)
+  goblinArmL = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.27, 0.09), darkMat);
+  goblinArmL.position.set(-0.24, 0.54, 0.02);
+  goblinArmL.rotation.z =  0.3;
+  goblinGroup.add(goblinArmL);
+  goblinArmR = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.27, 0.09), darkMat);
+  goblinArmR.position.set( 0.24, 0.54, 0.02);
+  goblinArmR.rotation.z = -0.3;
+  goblinGroup.add(goblinArmR);
+
+  // Legs (will be animated)
+  goblinLegL = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.30, 0.11), skinMat);
+  goblinLegL.position.set(-0.10, 0.20, 0);
+  goblinGroup.add(goblinLegL);
+  goblinLegR = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.30, 0.11), skinMat);
+  goblinLegR.position.set( 0.10, 0.20, 0);
+  goblinGroup.add(goblinLegR);
+
+  goblinGroup.position.set(goblinX, 0, goblinZ);
+  scene.add(goblinGroup);
+}
+
+function despawnGoblin() {
+  if (!goblinGroup) return;
+  scene.remove(goblinGroup);
+  goblinGroup = null;
+  goblinLegL  = null; goblinLegR = null;
+  goblinArmL  = null; goblinArmR = null;
+}
+
+function updateGoblinEvent(dt) {
+  if (!goblinGroup) return;
+  goblinEventElapsed += dt;
+
+  if (goblinSubState === 'dropping') {
+    // Safety: force flee if taking too long
+    if (goblinEventElapsed > GOBLIN_MAX_TIME) {
+      goblinSubState = 'fleeing';
+      goblinVelY     = 7;
+      _startGoblinFlee();
+    } else if (goblinDropIdx >= goblinSchedule.drops.length) {
+      goblinSubState = 'fleeing';
+      goblinVelY     = 7;
+      _startGoblinFlee();
+    } else {
+      const target = goblinSchedule.drops[goblinDropIdx];
+      const dx = target.x - goblinX, dz = target.z - goblinZ;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist < 0.55) {
+        // Drop item at this position
+        const itemId = 0x70000000 + eventCount * 200 + goblinDropIdx;
+        if (!groundItems.some(it => it.id === itemId)) {
+          const it = makeGroundItem(target.type, target.x, target.z, itemId);
+          groundItems.push(it);
+          sendItemEvent?.({ act: 'spawn', id: it.id, type: it.type, x: it.x, z: it.z });
+          window.SFX?.goblinDrop();
+        }
+        goblinDropIdx++;
+      } else {
+        // Move toward target
+        const nx = dx / dist, nz = dz / dist;
+        goblinX += nx * GOBLIN_SPEED * dt;
+        goblinZ += nz * GOBLIN_SPEED * dt;
+        goblinAngle = Math.atan2(nx, nz);
+      }
+    }
+
+  } else if (goblinSubState === 'fleeing') {
+    const dx = goblinFleeTargetX - goblinX, dz = goblinFleeTargetZ - goblinZ;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    if (dist > 0.2) {
+      const nx = dx / dist, nz = dz / dist;
+      goblinX += nx * GOBLIN_SPEED * GOBLIN_FLEE_MULT * dt;
+      goblinZ += nz * GOBLIN_SPEED * GOBLIN_FLEE_MULT * dt;
+      goblinAngle = Math.atan2(nx, nz);
+    }
+    // Gravity once off platform
+    goblinVelY -= GRAVITY * dt;
+    goblinGroup.position.y += goblinVelY * dt;
+    if (goblinGroup.position.y < -10) {
+      endEvent();
+      return;
+    }
+  }
+
+  // Animate limbs
+  goblinBobPhase += GOBLIN_SPEED * dt * 2.5;
+  const swing = Math.sin(goblinBobPhase) * 0.55;
+  if (goblinLegL) goblinLegL.rotation.x =  swing;
+  if (goblinLegR) goblinLegR.rotation.x = -swing;
+  if (goblinArmL) goblinArmL.rotation.x = -swing * 0.65;
+  if (goblinArmR) goblinArmR.rotation.x =  swing * 0.65;
+
+  // Position on ground (bob while running)
+  if (goblinSubState === 'dropping') {
+    const bob = Math.abs(Math.sin(goblinBobPhase)) * 0.18;
+    goblinGroup.position.set(goblinX, bob, goblinZ);
+  } else {
+    goblinGroup.position.x = goblinX;
+    goblinGroup.position.z = goblinZ;
+  }
+  goblinGroup.rotation.y = goblinAngle;
+}
+
+function _startGoblinFlee() {
+  // Run toward nearest edge — pick the axis where goblin is closer to edge
+  const toRight = PLATFORM_HALF - goblinX;
+  const toLeft  = PLATFORM_HALF + goblinX;
+  const toFront = PLATFORM_HALF - goblinZ;
+  const toBack  = PLATFORM_HALF + goblinZ;
+  const minDist = Math.min(toRight, toLeft, toFront, toBack);
+  if (minDist === toRight)      { goblinFleeTargetX = PLATFORM_HALF + 12; goblinFleeTargetZ = goblinZ; }
+  else if (minDist === toLeft)  { goblinFleeTargetX = -(PLATFORM_HALF + 12); goblinFleeTargetZ = goblinZ; }
+  else if (minDist === toFront) { goblinFleeTargetX = goblinX; goblinFleeTargetZ = PLATFORM_HALF + 12; }
+  else                          { goblinFleeTargetX = goblinX; goblinFleeTargetZ = -(PLATFORM_HALF + 12); }
+}
+
 const CAM_DIST   = 5;
 const CAM_HEIGHT = 2.5;
 
@@ -2895,6 +3153,8 @@ function loop(now) {
         }
       } else if (eventType === 'clouds_alive') {
         updateCloudEvent(dt);
+      } else if (eventType === 'loot_goblin') {
+        updateGoblinEvent(dt);
       }
       if (eventTimer <= 0 && eventState === 'running') endEvent();
     }
