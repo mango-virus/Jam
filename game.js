@@ -1661,6 +1661,7 @@ async function setupMultiplayer() {
       } else if (data.type === 'ready') {
         const peer = peers.get(fromPeerId);
         if (peer) { peer.ready = !!data.ready; updateMenuReadyList(); }
+      }
     });
 
     const [sPeel, onPeel] = room.makeAction('peel');
@@ -2588,6 +2589,8 @@ function loop(now) {
           if (!bananaPeels.some(p => p.id === fb.peelId)) {
             const g = makeBananaPeel(fb.x, fb.z);
             bananaPeels.push({ group: g, x: fb.x, z: fb.z, id: fb.peelId });
+            // Broadcast so peers with slight timing drift also see the peel land
+            sendPeel?.({ act: 'place', id: fb.peelId, x: fb.x, z: fb.z });
             window.SFX?.bananaPlace();
           }
         }
