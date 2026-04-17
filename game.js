@@ -3249,8 +3249,9 @@ function spawnGumball(colorIdx) {
   const mx = gumballMachineGroup.position.x;
   const mz = gumballMachineGroup.position.z;
 
-  // Find the nearest non-dead, non-ghost target (local player + peers)
+  // Find the nearest non-dead, non-ghost target (local player + peers), track Y too
   let tx = playerGroup.position.x, tz = playerGroup.position.z;
+  let ty = playerGroup.position.y + 0.85; // body centre
   let bestDist = (isDead || isGhost) ? Infinity : Math.hypot(tx - mx, tz - mz);
   for (const peer of peers.values()) {
     if (peer.isGhost) continue;
@@ -3259,6 +3260,7 @@ function spawnGumball(colorIdx) {
       bestDist = d;
       tx = peer.group.position.x;
       tz = peer.group.position.z;
+      ty = peer.group.position.y + 0.85;
     }
   }
   if (bestDist === Infinity) return; // no valid targets
@@ -3275,7 +3277,12 @@ function spawnGumball(colorIdx) {
   const aimAngle = Math.atan2(nx, nz) + spread;
 
   const speed = 10;
-  const by = gumballMachineGroup.position.y + 1.14 * GUMBALL_SCALE; // globe centre in world
+  const BUBBLE_GRAVITY = 1.5;
+  const by = gumballMachineGroup.position.y + 1.14 * GUMBALL_SCALE; // globe centre
+  // Ballistic velY: solve y(t)=ty where t=dist/speed and gravity decelerates the bubble
+  const flightTime = dist / speed;
+  const aimVelY = Math.max(-6, Math.min(12, (ty - by) / flightTime + 0.5 * BUBBLE_GRAVITY * flightTime));
+
   const grp = makeWorldBubble(colorIdx);
   grp.position.set(mx, by, mz);
   scene.add(grp);
@@ -3283,7 +3290,7 @@ function spawnGumball(colorIdx) {
     group: grp,
     x: mx, y: by, z: mz,
     velX: Math.sin(aimAngle) * speed,
-    velY: 1.5,
+    velY: aimVelY,
     velZ: Math.cos(aimAngle) * speed,
     life: 5.0,
   });
@@ -3352,9 +3359,9 @@ function updateGumballEvent(dt) {
         // Trap!
         isBubbleTrapped  = true;
         bubbleTrappedTimer = 2.0;
-        bubbleDriftX     = b.velX * 0.40;
-        bubbleDriftZ     = b.velZ * 0.40;
-        velY             = Math.max(velY, 2.8); // float upward
+        bubbleDriftX     = b.velX * 0.85; // carry most of bubble's lateral momentum
+        bubbleDriftZ     = b.velZ * 0.85;
+        velY             = 6.0; // strong initial upward float
         localBubbleMesh  = makePlayerBubbleMesh();
         playerGroup.add(localBubbleMesh);
         window.SFX?.bubbleTrap();
@@ -4383,14 +4390,18 @@ function loop(now) {
     if (blackHoleActive) {
       blackHoleTimer -= dt;
 
-      // Pull local player toward center
+      // Pull local player toward center — inverse-square law, very strong up close
       if (!isDead && !isGhost) {
-        const dx = blackHoleX - playerGroup.position.x;
-        const dz = blackHoleZ - playerGroup.position.z;
-        const dist = Math.max(Math.hypot(dx, dz), 0.3);
-        const pullForce = Math.min(28, 18 / (dist * 0.25 + 0.5));
-        velX += (dx / dist) * pullForce * dt;
-        velZ += (dz / dist) * pullForce * dt;
+        const dx  = blackHoleX - playerGroup.position.x;
+        const dz  = blackHoleZ - playerGroup.position.z;
+        const bhY = blackHoleGroup ? blackHoleGroup.position.y : 0.8;
+        const dy3 = bhY - (playerGroup.position.y + 0.85);
+        const dist3d = Math.max(Math.sqrt(dx*dx + dy3*dy3 + dz*dz), 0.3);
+        // Force grows sharply as distance shrinks — nearly inescapable inside ~2 units
+        const pullForce = Math.min(120, 80 / (dist3d * dist3d * 0.6 + 0.4));
+        velX += (dx  / dist3d) * pullForce * dt;
+        velZ += (dz  / dist3d) * pullForce * dt;
+        velY += (dy3 / dist3d) * pullForce * dt * 0.7; // vertical pull slightly weaker
       }
 
       // Ambient pull sound every ~0.9s
@@ -4630,8 +4641,12 @@ function loop(now) {
 
   // Jump is handled in keydown listener (once per press)
 
-  // Gravity
-  if (!onGround) velY -= GRAVITY * dt;
+  // Gravity (suppressed inside bubble — player floats gently instead)
+  if (isBubbleTrapped) {
+    velY += (1.2 - velY) * Math.min(1, dt * 3.5); // drift toward a slow upward float
+  } else if (!onGround) {
+    velY -= GRAVITY * dt;
+  }
   playerGroup.position.y += velY * dt;
 
   // Once below the platform surface, lock out any landing — player must fall to their death
