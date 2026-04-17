@@ -327,7 +327,7 @@ function spawnRuinCluster(x, z) {
 const TILE_COLS        = 6;
 const TILE_ROWS        = 6;
 const TILE_TOTAL       = TILE_COLS * TILE_ROWS;
-const TILE_GRACE_S     = 25;   // seconds before first tile drops
+const TILE_GRACE_S     = 10;   // seconds before first tile drops
 const TILE_INTERVAL    = 10;   // seconds between tile drop events
 const TILE_WARN_S      = 3.5;  // warning flash duration
 const TILE_SINK_S      = 1.8;  // sinking animation duration
