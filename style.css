@@ -488,6 +488,37 @@ kbd {
   margin-top: 0.5rem;
 }
 
+/* Random event announcement — top-centre overlay */
+#event-announcement {
+  position: fixed;
+  top: 10%;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  pointer-events: none;
+  z-index: 25;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+  white-space: nowrap;
+}
+#event-announcement.visible {
+  opacity: 1;
+}
+#event-announcement .event-name {
+  font-size: 2.8rem;
+  font-weight: 900;
+  color: #ffe44d;
+  text-shadow: 0 0 30px rgba(255,210,0,0.95), 0 0 65px rgba(255,150,0,0.55), 0 2px 5px rgba(0,0,0,0.9);
+  letter-spacing: 0.05em;
+}
+#event-announcement .event-sub {
+  font-size: 1.05rem;
+  color: #fffde0;
+  opacity: 0.8;
+  margin-top: 0.35rem;
+  text-shadow: 0 1px 5px rgba(0,0,0,0.9);
+}
+
 /* Tile warning flash */
 @keyframes tilewarn {
   0%, 100% { opacity: 1; }

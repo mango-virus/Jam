@@ -1661,6 +1661,19 @@ async function setupMultiplayer() {
       } else if (data.type === 'ready') {
         const peer = peers.get(fromPeerId);
         if (peer) { peer.ready = !!data.ready; updateMenuReadyList(); }
+      } else if (data.type === 'event' && data.act === 'announce') {
+        // Host is announcing an upcoming event — start our own countdown
+        if (gameState === 'playing' && eventState === 'idle') {
+          eventState = 'announcing';
+          eventType  = data.event;
+          eventTimer = EVENT_ANNOUNCE_S;
+          showEventAnnouncement(data.event);
+        }
+      } else if (data.type === 'falling_banana') {
+        // Host spawned a falling banana — show the same visual on our end
+        if (gameState === 'playing' && eventState === 'running' && eventType === 'rain_bananas') {
+          spawnFallingBananaVisual(data.x, data.z, false);
+        }
       }
     });
 
@@ -1922,6 +1935,17 @@ let tileDropIndex      = 0;         // next tile to warn
 let nextTileTime       = 0;         // game-time when next tile event fires
 let gameOverTimer      = 0;
 
+// --- Random event system ---
+let eventState           = 'idle';  // 'idle' | 'announcing' | 'running'
+let eventType            = null;    // which event is active
+let eventTimer           = 0;      // seconds remaining in current phase
+let nextEventTime        = 0;      // gameTime when to fire next event (set in startGame)
+let rainBananaSpawnTimer = 0;      // countdown between falling banana spawns
+const EVENT_ANNOUNCE_S       = 5;
+const RAIN_BANANAS_DURATION  = 25;
+const RAIN_BANANAS_INTERVAL  = 1.8; // seconds between banana drops
+const fallingBananas         = [];  // { group, x, z, velY, placesPeel, rotVX, rotVZ }
+
 const GHOST_KNOCKBACK_H  = 55;
 const GHOST_KNOCKBACK_UP = 16;
 const GHOST_PUNCH_CD     = 7.0;  // seconds
@@ -1938,6 +1962,7 @@ const btnStart   = document.getElementById('btn-start');
 const deathEl      = document.getElementById('death-msg');
 const deathMsgSpan = deathEl?.querySelector('span');
 const deathMsgSub  = deathEl?.querySelector('small');
+const eventAnnouncementEl = document.getElementById('event-announcement');
 
 function onPlatform(x, z) {
   return Math.abs(x) < PLATFORM_HALF && Math.abs(z) < PLATFORM_HALF;
@@ -2195,6 +2220,11 @@ function returnToLobby() {
   hasBanana = false; bananaDurability = 0;
   if (playerBanana) playerBanana.visible = false;
   isSlipping = false; slipTimer = 0; bananaImmunityTimer = 0;
+  // Clean up random events
+  eventState = 'idle'; eventType = null; eventTimer = 0;
+  for (const fb of fallingBananas) scene.remove(fb.group);
+  fallingBananas.length = 0;
+  hideEventAnnouncement();
   // Move player to lobby
   playerGroup.position.set(0, 1, 0);
   velY = 0; velX = 0; velZ = 0;
@@ -2230,6 +2260,15 @@ function startGame(seed, broadcast) {
   bananaPeels.length = 0;
   ghostPunchCooldown = 0;
   lastHitBy  = null;
+  // Reset random events
+  eventState = 'idle';
+  eventType  = null;
+  eventTimer = 0;
+  nextEventTime = 40 + Math.random() * 20; // first event 40–60 s into the match
+  rainBananaSpawnTimer = 0;
+  for (const fb of fallingBananas) scene.remove(fb.group);
+  fallingBananas.length = 0;
+  hideEventAnnouncement();
   window.GameMusic?.stop();
   // Clear any leftover items and reset spawn timer
   for (const it of groundItems) scene.remove(it.group);
@@ -2339,6 +2378,105 @@ function doPunch() {
     else               window.SFX?.punch(); // bare fist whoosh
   }
 }
+// ------------------------------------------------------------------
+// Random event system
+// ------------------------------------------------------------------
+
+const EVENT_INFO = {
+  rain_bananas: {
+    name: "🍌 It's Raining Bananas!",
+    sub:  'Watch out — banana peels are falling from the sky!',
+  },
+};
+
+function showEventAnnouncement(type) {
+  if (!eventAnnouncementEl) return;
+  const info = EVENT_INFO[type] || { name: type, sub: '' };
+  eventAnnouncementEl.innerHTML =
+    `<div class="event-name">${info.name}</div>` +
+    `<div class="event-sub">${info.sub}</div>`;
+  eventAnnouncementEl.classList.add('visible');
+}
+
+function hideEventAnnouncement() {
+  if (!eventAnnouncementEl) return;
+  eventAnnouncementEl.classList.remove('visible');
+}
+
+// Host calls this; broadcasts announcement to all peers.
+function triggerEvent(type) {
+  eventState = 'announcing';
+  eventType  = type;
+  eventTimer = EVENT_ANNOUNCE_S;
+  showEventAnnouncement(type);
+  sendGameEvent?.({ type: 'event', event: type, act: 'announce' });
+}
+
+function beginEvent() {
+  eventState = 'running';
+  const durations = { rain_bananas: RAIN_BANANAS_DURATION };
+  eventTimer = durations[eventType] ?? 20;
+  rainBananaSpawnTimer = 0; // first banana spawns immediately
+  hideEventAnnouncement();
+}
+
+function endEvent() {
+  eventState    = 'idle';
+  eventType     = null;
+  nextEventTime = gameTime + 30 + Math.random() * 30; // next event in 30–60 s
+  hideEventAnnouncement();
+}
+
+// Creates a falling banana visual at (x, z), optionally placing a peel on landing.
+function spawnFallingBananaVisual(x, z, placesPeel) {
+  const g = new THREE.Group();
+  g.position.set(x, 22, z);
+  g.rotation.set(
+    Math.random() * Math.PI * 2,
+    Math.random() * Math.PI * 2,
+    Math.random() * Math.PI * 2
+  );
+  const banMat2 = new THREE.MeshStandardMaterial({ color: 0xffe135, roughness: 0.65 });
+  const tipMat2 = new THREE.MeshStandardMaterial({ color: 0x7a5200, roughness: 0.8 });
+  const bMeshG = new THREE.Group();
+  [
+    { cx: -0.013, cy: -0.273, rot:  0.52, h: 0.057, w: 0.052, mat: tipMat2 },
+    { cx: -0.057, cy: -0.149, rot:  0.28, h: 0.182, w: 0.086, mat: banMat2 },
+    { cx: -0.075, cy:  0.016, rot:  0.00, h: 0.156, w: 0.094, mat: banMat2 },
+    { cx: -0.047, cy:  0.163, rot: -0.28, h: 0.143, w: 0.083, mat: banMat2 },
+    { cx:  0.008, cy:  0.267, rot: -0.52, h: 0.104, w: 0.065, mat: banMat2 },
+    { cx:  0.049, cy:  0.322, rot: -0.72, h: 0.049, w: 0.047, mat: tipMat2 },
+  ].forEach(({ cx, cy, rot, h, w, mat }) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, w), mat);
+    m.position.set(cx, cy, 0);
+    m.rotation.z = rot;
+    bMeshG.add(m);
+  });
+  bMeshG.scale.setScalar(2.2);
+  g.add(bMeshG);
+  scene.add(g);
+  fallingBananas.push({
+    group: g, x, z, velY: 0, placesPeel,
+    rotVX: (Math.random() - 0.5) * 5,
+    rotVZ: (Math.random() - 0.5) * 5,
+  });
+}
+
+// Host-only: pick a random platform position, spawn visual + notify peers.
+function spawnFallingBanana() {
+  const margin = 3;
+  for (let tries = 0; tries < 30; tries++) {
+    const x = (Math.random() * 2 - 1) * (PLATFORM_HALF - margin);
+    const z = (Math.random() * 2 - 1) * (PLATFORM_HALF - margin);
+    if (!isTileUnstable(x, z) && getTileAt(x, z)) {
+      spawnFallingBananaVisual(x, z, true);
+      // Tell peers the drop position so they can show the same visual
+      sendGameEvent?.({ type: 'falling_banana', x, z });
+      return;
+    }
+  }
+}
+
 const CAM_DIST   = 5;
 const CAM_HEIGHT = 2.5;
 
@@ -2396,6 +2534,46 @@ function loop(now) {
     if (isGhost && ghostPunchCooldown > 0) ghostPunchCooldown -= dt;
     // Win condition check (every ~0.5s)
     if (Math.floor(gameTime * 2) !== Math.floor((gameTime - dt) * 2)) checkWinCondition();
+
+    // --- Random event system ---
+    if (eventState === 'idle' && gameTime >= nextEventTime && isHost) {
+      triggerEvent('rain_bananas');
+    }
+    if (eventState === 'announcing') {
+      eventTimer -= dt;
+      if (eventTimer <= 0) beginEvent();
+    }
+    if (eventState === 'running') {
+      eventTimer -= dt;
+      if (eventType === 'rain_bananas') {
+        rainBananaSpawnTimer -= dt;
+        if (isHost && rainBananaSpawnTimer <= 0) {
+          spawnFallingBanana();
+          rainBananaSpawnTimer = RAIN_BANANAS_INTERVAL;
+        }
+      }
+      if (eventTimer <= 0) endEvent();
+    }
+    // --- Falling banana physics & landing ---
+    for (let i = fallingBananas.length - 1; i >= 0; i--) {
+      const fb = fallingBananas[i];
+      fb.velY -= GRAVITY * dt;
+      fb.group.position.y += fb.velY * dt;
+      fb.group.rotation.x += fb.rotVX * dt;
+      fb.group.rotation.z += fb.rotVZ * dt;
+      if (fb.group.position.y <= 0.1) {
+        // Landed — host places peel and broadcasts it
+        if (fb.placesPeel && !isTileUnstable(fb.x, fb.z) && getTileAt(fb.x, fb.z)) {
+          const id = nextPeelId();
+          const g  = makeBananaPeel(fb.x, fb.z);
+          bananaPeels.push({ group: g, x: fb.x, z: fb.z, id });
+          sendPeel?.({ act: 'place', id, x: fb.x, z: fb.z });
+          window.SFX?.bananaPlace();
+        }
+        scene.remove(fb.group);
+        fallingBananas.splice(i, 1);
+      }
+    }
   }
 
   // Game over countdown — runs in 'gameover' state (outside the 'playing' block)
