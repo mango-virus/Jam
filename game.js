@@ -3037,7 +3037,12 @@ function updateGoblinEvent(dt) {
     // Gravity once off platform
     goblinVelY -= GRAVITY * dt;
     goblinGroup.position.y += goblinVelY * dt;
-    if (goblinGroup.position.y < -10) {
+    // Fade out as goblin falls — fully gone by y = -5
+    const fade = Math.max(0, Math.min(1, 1 + goblinGroup.position.y * 0.22));
+    goblinGroup.traverse(child => {
+      if (child.isMesh && child.material) child.material.opacity = fade;
+    });
+    if (goblinGroup.position.y < -5) {
       endEvent();
       return;
     }
@@ -3059,7 +3064,8 @@ function updateGoblinEvent(dt) {
     goblinGroup.position.x = goblinX;
     goblinGroup.position.z = goblinZ;
   }
-  goblinGroup.rotation.y = goblinAngle;
+  // +Math.PI so the face (built facing local -Z) points in the direction of travel
+  goblinGroup.rotation.y = goblinAngle + Math.PI;
 }
 
 function _startGoblinFlee() {
@@ -3073,6 +3079,14 @@ function _startGoblinFlee() {
   else if (minDist === toLeft)  { goblinFleeTargetX = -(PLATFORM_HALF + 12); goblinFleeTargetZ = goblinZ; }
   else if (minDist === toFront) { goblinFleeTargetX = goblinX; goblinFleeTargetZ = PLATFORM_HALF + 12; }
   else                          { goblinFleeTargetX = goblinX; goblinFleeTargetZ = -(PLATFORM_HALF + 12); }
+  // Enable transparency on all goblin materials so opacity can be animated during fall
+  goblinGroup.traverse(child => {
+    if (child.isMesh && child.material) {
+      child.material = child.material.clone();
+      child.material.transparent = true;
+      child.material.opacity = 1.0;
+    }
+  });
 }
 
 const CAM_DIST   = 5;
