@@ -2794,25 +2794,27 @@ function makeHotPotatoBomb() {
   const sphere = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 12), bodyMat);
   g.add(sphere);
 
-  // ── Fuse — cylinder emerging from sphere surface ─────────────────
-  // Angle from vertical: 0.4 rad.  Exit point on sphere surface:
-  //   (0.22·sin0.4 , 0.22·cos0.4) ≈ (0.085, 0.202)
-  // Fuse half-length 0.14, direction (sin0.4, cos0.4) ≈ (0.389, 0.921)
-  // Fuse centre ≈ exit + dir·0.14 = (0.140, 0.331)
-  // Fuse tip    ≈ exit + dir·0.28 = (0.195, 0.460)
-  const fuseMat = new THREE.MeshStandardMaterial({ color: 0x5c3010, roughness: 0.95 });
-  const fuse = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.026, 0.28, 7), fuseMat);
-  fuse.position.set(0.140, 0.331, 0);
-  fuse.rotation.z = 0.4;
-  g.add(fuse);
+  // ── Fuse group — pivot sits at the sphere surface, then leans ────
+  // Everything fuse-related is a child of this group, so the fuse and
+  // spark are always flush against the bomb body regardless of angle.
+  const fuseGroup = new THREE.Group();
+  fuseGroup.position.set(0, 0.21, 0);   // top of sphere
+  fuseGroup.rotation.z = 0.42;          // lean to the right
+  g.add(fuseGroup);
 
-  // ── Spark — small glowing sphere sitting at the fuse tip ─────────
+  // Fuse cylinder — sits along fuseGroup's local +Y from its base
+  const fuseMat = new THREE.MeshStandardMaterial({ color: 0x5c3010, roughness: 0.95 });
+  const fuse = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.026, 0.26, 7), fuseMat);
+  fuse.position.set(0, 0.13, 0);        // half-length up from the pivot
+  fuseGroup.add(fuse);
+
+  // Spark — sits right at the tip of the fuse
   const sparkMat = new THREE.MeshStandardMaterial({
     color: 0xffdd00, emissive: new THREE.Color(0xffaa00), emissiveIntensity: 2.5,
   });
-  const spark = new THREE.Mesh(new THREE.SphereGeometry(0.048, 8, 8), sparkMat);
-  spark.position.set(0.195, 0.460, 0);
-  g.add(spark);
+  const spark = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 8), sparkMat);
+  spark.position.set(0, 0.26, 0);       // full-length up from the pivot
+  fuseGroup.add(spark);
 
   // ── Point light for red glow ──────────────────────────────────────
   const light = new THREE.PointLight(0xff2200, 0, 4.0);
