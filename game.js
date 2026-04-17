@@ -5379,7 +5379,8 @@ function loop(now) {
   } // end !isGhost physics block
   } // end !isSpectating physics block
 
-  // Local limb swing — faster when sprinting
+  // Local limb swing — only when not spectating (isSprinting/isMoving are scoped to the physics block)
+  if (!isSpectating) {
   const swingSpeed = isSprinting ? 13 : 8;
   const swing = isMoving ? Math.sin(time * swingSpeed) * 0.5 : 0;
   leftLeg.rotation.x  =  swing;
@@ -5399,6 +5400,7 @@ function loop(now) {
   } else {
     rightArm.rotation.x = swing * 0.6;
   }
+  } // end !isSpectating limb animation
 
   // --- Camera ---
   if (gameState === 'playing' && !isSpectating) {
