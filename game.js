@@ -5475,11 +5475,11 @@ function loop(now) {
     punchTimer = Math.max(0, punchTimer - dt);
     const pt = 1 - punchTimer / 0.35;
     if (hasSword) {
-      // Overhead slash — arm is at overhead from the moment the attack fires,
-      // then slashes straight down-forward through the target.
-      // pt=0: arm overhead (-2.8 ≈ arm pointing up); pt=1: arm forward-low (-0.4).
-      rightArm.rotation.x      = -2.8 + pt * 2.4;          // -2.8 → -0.4
-      rForearmGroup.rotation.x = Math.max(0, 1.1 - pt * 1.1); // elbow straight on impact
+      // Overhead slash — arm overhead at pt=0, full downswing at pt=1.
+      // spt runs at 2× speed so the slash is snappy.
+      const spt = Math.min(1, pt * 2.0);
+      rightArm.rotation.x      = -2.8 + spt * 2.4;         // -2.8 → -0.4
+      rForearmGroup.rotation.x = -1.1 + spt * 1.1;          // elbow folds back at top, snaps straight on impact
     } else {
       // Forward jab — elbow starts bent, arm extends and straightens, then retracts
       rightArm.rotation.x      = -Math.sin(pt * Math.PI) * 1.8;
@@ -5669,9 +5669,10 @@ function loop(now) {
       peer.punchTimer = Math.max(0, peer.punchTimer - dt);
       const pt = 1 - peer.punchTimer / 0.35;
       if (peer.pSword) {
-        // Overhead slash — arm overhead at pt=0, slashes down-forward
-        peer.rightArm.rotation.x = -2.8 + pt * 2.4;
-        if (peer.rForearmGroup) peer.rForearmGroup.rotation.x = Math.max(0, 1.1 - pt * 1.1);
+        // Overhead slash — snappy downswing at 2× speed
+        const spt = Math.min(1, pt * 2.0);
+        peer.rightArm.rotation.x = -2.8 + spt * 2.4;
+        if (peer.rForearmGroup) peer.rForearmGroup.rotation.x = -1.1 + spt * 1.1;
       } else {
         // Forward jab — elbow starts bent, extends straight, retracts
         peer.rightArm.rotation.x = -Math.sin(pt * Math.PI) * 1.8;
