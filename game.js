@@ -2786,8 +2786,8 @@ document.addEventListener('keydown', e => {
     }
   }
 
-  // E — pick up nearby item
-  if (e.key === 'e' || e.key === 'E') {
+  // E — pick up nearby item (ghosts cannot pick up items)
+  if ((e.key === 'e' || e.key === 'E') && !isGhost) {
     const px = playerGroup.position.x, pz = playerGroup.position.z;
     for (let i = groundItems.length - 1; i >= 0; i--) {
       const it = groundItems[i];
