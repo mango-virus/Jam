@@ -5470,12 +5470,37 @@ function loop(now) {
   // Left elbow bend during walk; flatten when blocking
   lForearmGroup.rotation.x = shieldBlocking ? 0 : Math.abs(swing) * 0.30;
 
-  // Punch animation overrides right arm + elbow
+  // Attack animation overrides right arm + elbow
   if (punchTimer > 0) {
     punchTimer = Math.max(0, punchTimer - dt);
     const pt = 1 - punchTimer / 0.35;
-    rightArm.rotation.x = -Math.sin(pt * Math.PI) * 1.6;
-    rForearmGroup.rotation.x = (1 - Math.sin(pt * Math.PI)) * 0.30;
+    if (hasSword) {
+      // Overhead slash — wind up over shoulder, crash down, brief recovery
+      let armX, elbowX;
+      if (pt < 0.30) {
+        // Wind-up: raise arm up and back, fold elbow
+        const t = pt / 0.30;
+        armX   = t * 2.4;
+        elbowX = 0.30 + t * 1.30;
+      } else if (pt < 0.80) {
+        // Downswing: slam forward, elbow snaps straight on impact
+        const t = (pt - 0.30) / 0.50;
+        const e = t * t * (3 - 2 * t); // smooth-step — accelerates mid-swing
+        armX   = 2.4 - e * 3.8;
+        elbowX = 1.60 * (1 - e);
+      } else {
+        // Recovery back to rest
+        const t = (pt - 0.80) / 0.20;
+        armX   = -1.4 + t * 1.4;
+        elbowX = t * 0.30;
+      }
+      rightArm.rotation.x      = armX;
+      rForearmGroup.rotation.x = Math.max(0, elbowX);
+    } else {
+      // Forward jab — elbow starts bent, arm extends and straightens, then retracts
+      rightArm.rotation.x      = -Math.sin(pt * Math.PI) * 1.8;
+      rForearmGroup.rotation.x = (1 - Math.sin(pt * Math.PI)) * 0.45;
+    }
   } else {
     rightArm.rotation.x = swing * 0.6;
     rForearmGroup.rotation.x = Math.abs(swing) * 0.30;
@@ -5655,12 +5680,34 @@ function loop(now) {
     // Left elbow bend
     if (peer.lForearmGroup) peer.lForearmGroup.rotation.x = peer.blocking ? 0 : Math.abs(ps) * 0.30;
 
-    // Punch animation (right arm + elbow)
+    // Attack animation (right arm + elbow)
     if (peer.punchTimer > 0) {
       peer.punchTimer = Math.max(0, peer.punchTimer - dt);
       const pt = 1 - peer.punchTimer / 0.35;
-      peer.rightArm.rotation.x = -Math.sin(pt * Math.PI) * 1.6;
-      if (peer.rForearmGroup) peer.rForearmGroup.rotation.x = (1 - Math.sin(pt * Math.PI)) * 0.30;
+      if (peer.pSword) {
+        // Overhead slash
+        let armX, elbowX;
+        if (pt < 0.30) {
+          const t = pt / 0.30;
+          armX   = t * 2.4;
+          elbowX = 0.30 + t * 1.30;
+        } else if (pt < 0.80) {
+          const t = (pt - 0.30) / 0.50;
+          const e = t * t * (3 - 2 * t);
+          armX   = 2.4 - e * 3.8;
+          elbowX = 1.60 * (1 - e);
+        } else {
+          const t = (pt - 0.80) / 0.20;
+          armX   = -1.4 + t * 1.4;
+          elbowX = t * 0.30;
+        }
+        peer.rightArm.rotation.x = armX;
+        if (peer.rForearmGroup) peer.rForearmGroup.rotation.x = Math.max(0, elbowX);
+      } else {
+        // Forward jab — elbow starts bent, extends straight, retracts
+        peer.rightArm.rotation.x = -Math.sin(pt * Math.PI) * 1.8;
+        if (peer.rForearmGroup) peer.rForearmGroup.rotation.x = (1 - Math.sin(pt * Math.PI)) * 0.45;
+      }
     } else {
       peer.rightArm.rotation.x = ps * 0.6;
       if (peer.rForearmGroup) peer.rForearmGroup.rotation.x = Math.abs(ps) * 0.30;
