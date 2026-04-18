@@ -5475,16 +5475,16 @@ function loop(now) {
     punchTimer = Math.max(0, punchTimer - dt);
     const pt = 1 - punchTimer / 0.35;
     if (hasSword) {
-      // Overhead slash — raise arm straight up, then drive forward and down
+      // Overhead slash — arm raises forward-and-up (negative arc), then crashes down toward target
       if (pt < 0.25) {
-        // Raise: arm sweeps up to near-vertical overhead position
+        // Raise: sweep arm forward then overhead (0 → -2.8, through front arc)
         const t = pt / 0.25;
-        rightArm.rotation.x      = t * 2.9;           // 0 → +2.9 (~overhead, arm pointing up)
-        rForearmGroup.rotation.x = 0.30 + t * 0.85;   // elbow folds in preparation
+        rightArm.rotation.x      = -t * 2.8;          // 0 → -2.8 (overhead from front)
+        rForearmGroup.rotation.x = 0.30 + t * 0.85;   // elbow folds
       } else {
-        // Slash: crash arm down and forward, elbow snaps out on impact
+        // Slash: drive arm down-forward through the target (-2.8 → -0.8)
         const t = (pt - 0.25) / 0.75;
-        rightArm.rotation.x      = 2.9 - t * 4.4;     // +2.9 → -1.5 (overhead → forward-down)
+        rightArm.rotation.x      = -2.8 + t * 2.0;    // -2.8 → -0.8 (overhead → forward-down)
         rForearmGroup.rotation.x = Math.max(0, 1.15 * (1 - t));
       }
     } else {
@@ -5676,14 +5676,14 @@ function loop(now) {
       peer.punchTimer = Math.max(0, peer.punchTimer - dt);
       const pt = 1 - peer.punchTimer / 0.35;
       if (peer.pSword) {
-        // Overhead slash — raise arm to vertical, then crash down
+        // Overhead slash — forward arc to overhead, then slash down
         if (pt < 0.25) {
           const t = pt / 0.25;
-          peer.rightArm.rotation.x = t * 2.9;
+          peer.rightArm.rotation.x = -t * 2.8;
           if (peer.rForearmGroup) peer.rForearmGroup.rotation.x = 0.30 + t * 0.85;
         } else {
           const t = (pt - 0.25) / 0.75;
-          peer.rightArm.rotation.x = 2.9 - t * 4.4;
+          peer.rightArm.rotation.x = -2.8 + t * 2.0;
           if (peer.rForearmGroup) peer.rForearmGroup.rotation.x = Math.max(0, 1.15 * (1 - t));
         }
       } else {
