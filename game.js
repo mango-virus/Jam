@@ -1027,16 +1027,20 @@ function makeCharacter(hexColor) {
   // Elbow joint (wider bump)
   const lElbow = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.07, 0.18), armMat);
   lElbow.position.y = -0.27; lElbow.castShadow = true; leftArm.add(lElbow);
+  // Forearm group — pivot at elbow joint for bend animation
+  const lForearmGroup = new THREE.Group();
+  lForearmGroup.position.set(0, -0.27, 0);
+  leftArm.add(lForearmGroup);
   // Forearm
   const lForearm = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.20, 0.13), armMat);
-  lForearm.position.y = -0.39; lForearm.castShadow = true; leftArm.add(lForearm);
+  lForearm.position.y = -0.12; lForearm.castShadow = true; lForearmGroup.add(lForearm);
   // Hand
   const lHand = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.12, 0.13), skinMat);
-  lHand.position.y = -0.52; lHand.castShadow = true; leftArm.add(lHand);
+  lHand.position.y = -0.25; lHand.castShadow = true; lForearmGroup.add(lHand);
 
   // Shield (shown in left hand when equipped) — heater / knight's shield shape
   const shieldEquip = new THREE.Group();
-  shieldEquip.position.set(0, -0.56, 0);
+  shieldEquip.position.set(0, -0.29, 0);
   shieldEquip.rotation.x = Math.PI / 2;
   shieldEquip.visible = false;
   const shMat  = new THREE.MeshStandardMaterial({ color: 0xa8b8c8, metalness: 0.75, roughness: 0.22 });
@@ -1079,7 +1083,7 @@ function makeCharacter(hexColor) {
     new THREE.MeshStandardMaterial());
   shieldEmblem.visible = false;
   shieldEquip.add(shieldEmblem);
-  leftArm.add(shieldEquip);
+  lForearmGroup.add(shieldEquip);
   normalBody.add(leftArm);
 
   const rightArm = new THREE.Group();
@@ -1094,16 +1098,20 @@ function makeCharacter(hexColor) {
   // Elbow joint
   const rElbow = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.07, 0.18), armMat);
   rElbow.position.y = -0.27; rElbow.castShadow = true; rightArm.add(rElbow);
+  // Forearm group — pivot at elbow joint for bend animation
+  const rForearmGroup = new THREE.Group();
+  rForearmGroup.position.set(0, -0.27, 0);
+  rightArm.add(rForearmGroup);
   // Forearm
   const rForearm = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.20, 0.13), armMat);
-  rForearm.position.y = -0.39; rForearm.castShadow = true; rightArm.add(rForearm);
+  rForearm.position.y = -0.12; rForearm.castShadow = true; rForearmGroup.add(rForearm);
   // Hand
   const rHand = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.12, 0.13), skinMat);
-  rHand.position.y = -0.52; rHand.castShadow = true; rightArm.add(rHand);
+  rHand.position.y = -0.25; rHand.castShadow = true; rForearmGroup.add(rHand);
 
   // Sword (shown in right hand when equipped) — knight's longsword
   const swordGroup = new THREE.Group();
-  swordGroup.position.set(0, -0.55, 0.12);
+  swordGroup.position.set(0, -0.28, 0.12);
   swordGroup.rotation.x = Math.PI / 2;
   swordGroup.visible = false;
   const sBladeMat   = new THREE.MeshStandardMaterial({ color: 0xd4dcea, metalness: 0.92, roughness: 0.10 });
@@ -1151,14 +1159,14 @@ function makeCharacter(hexColor) {
   const sPommel = new THREE.Mesh(new THREE.SphereGeometry(0.056, 8, 7), sGoldMat);
   sPommel.position.y = -0.205;
   swordGroup.add(sPommel);
-  rightArm.add(swordGroup);
+  rForearmGroup.add(swordGroup);
 
   // Boxing glove (shown in right hand when equipped)
   // Centred on the arm (no z-offset) so the arm mesh can never clip through.
   // Sphere half-extents (0.21, 0.19, 0.195) fully contain the 0.15×0.15 arm cross-section
   // all the way up to the wrist where the cuff takes over.
   const gloveGroup = new THREE.Group();
-  gloveGroup.position.set(0, -0.44, 0);
+  gloveGroup.position.set(0, -0.17, 0);
   gloveGroup.visible = false;
   // Main glove body
   const gloveMat = new THREE.MeshStandardMaterial({ color: 0xcc2200, roughness: 0.55, metalness: 0.08 });
@@ -1185,11 +1193,11 @@ function makeCharacter(hexColor) {
     new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.9 }));
   strap.position.set(0, 0.285, 0.04);
   gloveGroup.add(strap);
-  rightArm.add(gloveGroup);
+  rForearmGroup.add(gloveGroup);
 
   // Home run bat (shown in right hand when equipped)
   const batGroup = new THREE.Group();
-  batGroup.position.set(0, -0.52, 0.10);
+  batGroup.position.set(0, -0.25, 0.10);
   batGroup.rotation.x = Math.PI / 2;
   batGroup.visible = false;
   const batWoodMat = new THREE.MeshStandardMaterial({ color: 0x8b4513, roughness: 0.75, metalness: 0.0 });
@@ -1219,7 +1227,7 @@ function makeCharacter(hexColor) {
   batCap.scale.y = 0.55;
   batCap.position.y = 0.58;
   batGroup.add(batCap);
-  rightArm.add(batGroup);
+  rForearmGroup.add(batGroup);
 
   // Banana (shown in right hand when equipped)
   // rotation.x = PI/2 turns the whole group so the banana lies horizontally
@@ -1228,7 +1236,7 @@ function makeCharacter(hexColor) {
   const bananaGroup = new THREE.Group();
   // z=0.26 keeps the bottom tip (cy=-0.22 → z=0.04) just clear of the body.
   // cy=0 is the true arc midpoint so the palm grips the centre of the banana.
-  bananaGroup.position.set(0, -0.54, 0.26);
+  bananaGroup.position.set(0, -0.27, 0.26);
   bananaGroup.rotation.x = Math.PI / 2;
   bananaGroup.visible = false;
   const banMat  = new THREE.MeshStandardMaterial({ color: 0xffe135, roughness: 0.65 });
@@ -1249,11 +1257,11 @@ function makeCharacter(hexColor) {
     m.rotation.z = rot;
     bananaGroup.add(m);
   });
-  rightArm.add(bananaGroup);
+  rForearmGroup.add(bananaGroup);
 
   // Gravity Bomb (shown in right hand when equipped)
   const grenadeGroup = new THREE.Group();
-  grenadeGroup.position.set(0, -0.55, 0.10);
+  grenadeGroup.position.set(0, -0.28, 0.10);
   grenadeGroup.visible = false;
   const gCoreMat = new THREE.MeshStandardMaterial({
     color: 0x050008, metalness: 0.8, roughness: 0.2,
@@ -1276,7 +1284,7 @@ function makeCharacter(hexColor) {
   gRingB.rotation.x = -Math.PI / 5;
   gRingB.rotation.z = Math.PI / 4;
   grenadeGroup.add(gRingB);
-  rightArm.add(grenadeGroup);
+  rForearmGroup.add(grenadeGroup);
 
   normalBody.add(rightArm);
 
@@ -1286,23 +1294,25 @@ function makeCharacter(hexColor) {
   function makeLeg(xPos) {
     const lg = new THREE.Group();
     lg.position.set(xPos, 0.40, 0); // hip pivot
-    // Thigh
     const thigh = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.22, 0.18), legMat);
     thigh.position.y = -0.11; thigh.castShadow = true; lg.add(thigh);
-    // Knee joint (wider bump)
-    const knee = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.07, 0.20), legMat);
-    knee.position.y = -0.26; knee.castShadow = true; lg.add(knee);
-    // Shin
+    const kneeBump = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.07, 0.20), legMat);
+    kneeBump.position.y = -0.26; kneeBump.castShadow = true; lg.add(kneeBump);
+    // Knee group — pivot at knee joint for bend animation
+    const kneeGroup = new THREE.Group();
+    kneeGroup.position.y = -0.26;
+    lg.add(kneeGroup);
     const shin = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.20, 0.15), legMat);
-    shin.position.y = -0.38; shin.castShadow = true; lg.add(shin);
-    // Foot (wider/deeper)
+    shin.position.y = -0.12; shin.castShadow = true; kneeGroup.add(shin);
     const foot = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.08, 0.26), legMat);
-    foot.position.set(0, -0.50, 0.02); foot.castShadow = true; lg.add(foot);
+    foot.position.set(0, -0.24, 0.02); foot.castShadow = true; kneeGroup.add(foot);
     normalBody.add(lg);
-    return lg;
+    return { lg, kneeGroup };
   }
-  const leftLeg  = makeLeg(-0.14);
-  const rightLeg = makeLeg( 0.14);
+  const { lg: _lLeg, kneeGroup: lKneeGroup } = makeLeg(-0.14);
+  const { lg: _rLeg, kneeGroup: rKneeGroup } = makeLeg( 0.14);
+  const leftLeg  = _lLeg;
+  const rightLeg = _rLeg;
 
   // ── Face ─────────────────────────────────────────────────────
   // Head is Box(0.40, 0.44, 0.36) at y=1.235; front face at z=0.18
@@ -1357,73 +1367,6 @@ function makeCharacter(hexColor) {
     }
   }
 
-  // ── Hair ─────────────────────────────────────────────────────
-  const hairStyle = Math.floor(Math.random() * 9); // 8 = bald
-  const hairHue   = Math.random();
-  const wildHair  = Math.random() > 0.85;
-  const hairMat   = new THREE.MeshStandardMaterial({
-    color: new THREE.Color().setHSL(hairHue, wildHair ? 0.95 : 0.5 + Math.random() * 0.3, wildHair ? 0.45 + Math.random() * 0.3 : 0.12 + Math.random() * 0.18),
-    roughness: 0.9
-  });
-  if (hairStyle === 0) {
-    // Spiky
-    for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * Math.PI * 2 + 0.3;
-      const sp = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.22, 5), hairMat);
-      sp.position.set(Math.sin(a) * 0.12, 1.53, Math.cos(a) * 0.12); normalBody.add(sp);
-    }
-    const tuft = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.24, 5), hairMat);
-    tuft.position.y = 1.57; normalBody.add(tuft);
-  } else if (hairStyle === 1) {
-    // Side swept
-    const swept = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.10, 0.34), hairMat);
-    swept.position.set(0.07, 1.47, 0.02); swept.rotation.z = -0.28; normalBody.add(swept);
-  } else if (hairStyle === 2) {
-    // Mohawk
-    const hawk = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.26, 0.32), hairMat);
-    hawk.position.set(0, 1.535, 0); normalBody.add(hawk);
-  } else if (hairStyle === 3) {
-    // Afro
-    for (let i = 0; i < 8; i++) {
-      const a = (i / 8) * Math.PI * 2;
-      const curl = new THREE.Mesh(new THREE.SphereGeometry(0.10, 7, 5), hairMat);
-      curl.position.set(Math.sin(a) * 0.17, 1.48 + Math.abs(Math.sin(a * 1.3)) * 0.04, Math.cos(a) * 0.17);
-      normalBody.add(curl);
-    }
-    const topAfro = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 5), hairMat);
-    topAfro.position.y = 1.57; normalBody.add(topAfro);
-  } else if (hairStyle === 4) {
-    // Long straight
-    const cap4 = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.07, 0.36), hairMat);
-    cap4.position.y = 1.47; normalBody.add(cap4);
-    for (const hx of [-0.16, 0.16]) {
-      const strand = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.42, 0.07), hairMat);
-      strand.position.set(hx, 1.27, -0.02); normalBody.add(strand);
-    }
-  } else if (hairStyle === 5) {
-    // Pigtails
-    const cap5 = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.07, 0.34), hairMat);
-    cap5.position.y = 1.47; normalBody.add(cap5);
-    for (const hx of [-0.21, 0.21]) {
-      const pt = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.028, 0.24, 8), hairMat);
-      pt.position.set(hx, 1.22, 0.01); normalBody.add(pt);
-    }
-  } else if (hairStyle === 6) {
-    // Flat top
-    const flat = new THREE.Mesh(new THREE.BoxGeometry(0.33, 0.13, 0.33), hairMat);
-    flat.position.y = 1.505; normalBody.add(flat);
-  } else if (hairStyle === 7) {
-    // Bob cut
-    for (const hx of [-0.175, 0.175]) {
-      const side = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.28, 0.32), hairMat);
-      side.position.set(hx, 1.28, -0.01); normalBody.add(side);
-    }
-    const back = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.28, 0.08), hairMat);
-    back.position.set(0, 1.28, -0.17); normalBody.add(back);
-    const cap7 = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.07, 0.34), hairMat);
-    cap7.position.y = 1.47; normalBody.add(cap7);
-  }
-  // hairStyle 8 = bald
 
   // Armor group — chest plate (front + back) only, no helmet
   const armorGroup = new THREE.Group();
@@ -1510,7 +1453,7 @@ function makeCharacter(hexColor) {
   function makeOneBoot() {
     const boot = new THREE.Group();
     // Centred on the leg (leg already carries its own x offset)
-    boot.position.set(0, -0.45, 0);
+    boot.position.set(0, -0.19, 0);
     boot.visible = false;
 
     // Sole
@@ -1542,8 +1485,8 @@ function makeCharacter(hexColor) {
 
   const leftBootMesh  = makeOneBoot();
   const rightBootMesh = makeOneBoot();
-  leftLeg.add(leftBootMesh);   // inherits leftLeg's swing rotation
-  rightLeg.add(rightBootMesh); // inherits rightLeg's swing rotation
+  lKneeGroup.add(leftBootMesh);   // inherits both hip and knee rotation
+  rKneeGroup.add(rightBootMesh);
 
   // Proxy object — same .visible API as before, controls both boots at once
   const bootsGroup = {
@@ -1551,7 +1494,7 @@ function makeCharacter(hexColor) {
     set visible(v) { leftBootMesh.visible = v; rightBootMesh.visible = v; }
   };
 
-  return { group, normalBody, ghostBody, leftArm, rightArm, leftLeg, rightLeg, swordGroup, gloveGroup, batGroup, bananaGroup, grenadeGroup, shieldEquip, shieldEmblem, armorGroup, bootsGroup };
+  return { group, normalBody, ghostBody, leftArm, rightArm, leftLeg, rightLeg, lForearmGroup, rForearmGroup, lKneeGroup, rKneeGroup, swordGroup, gloveGroup, batGroup, bananaGroup, grenadeGroup, shieldEquip, shieldEmblem, armorGroup, bootsGroup };
 }
 
 // ------------------------------------------------------------------
@@ -1560,6 +1503,7 @@ function makeCharacter(hexColor) {
 
 const { group: playerGroup, normalBody: playerNormalBody, ghostBody: playerGhostBody,
         leftArm, rightArm, leftLeg, rightLeg,
+        lForearmGroup, rForearmGroup, lKneeGroup, rKneeGroup,
         swordGroup: playerSword, gloveGroup: playerGlove, batGroup: playerBat,
         bananaGroup: playerBanana,
         grenadeGroup: playerGrenade,
@@ -5507,19 +5451,34 @@ function loop(now) {
   leftLeg.rotation.x  =  swing;
   rightLeg.rotation.x = -swing;
 
+  // Knee bend — forward-swinging leg bends; tuck both when airborne
+  const kBend = isSprinting ? 0.85 : 0.60;
+  if (!onGround) {
+    lKneeGroup.rotation.x = 0.75;
+    rKneeGroup.rotation.x = 0.75;
+  } else {
+    lKneeGroup.rotation.x = Math.max(0,  swing) * kBend;
+    rKneeGroup.rotation.x = Math.max(0, -swing) * kBend;
+  }
+
   // Shield raise animation — smoothly lifts arm into guard position
   const shieldBlocking = hasShield && isBlocking;
   const targetLeftX = shieldBlocking ? -1.5 : -swing * 0.6;
   const targetLeftZ = shieldBlocking ?  0.05 :  0.15;
   leftArm.rotation.x += (targetLeftX - leftArm.rotation.x) * Math.min(1, dt * 14);
   leftArm.rotation.z += (targetLeftZ - leftArm.rotation.z) * Math.min(1, dt * 14);
+  // Left elbow bend during walk; flatten when blocking
+  lForearmGroup.rotation.x = shieldBlocking ? 0 : Math.abs(swing) * 0.30;
 
-  // Punch animation overrides right arm
+  // Punch animation overrides right arm + elbow
   if (punchTimer > 0) {
     punchTimer = Math.max(0, punchTimer - dt);
-    rightArm.rotation.x = -Math.sin((1 - punchTimer / 0.35) * Math.PI) * 1.6;
+    const pt = 1 - punchTimer / 0.35;
+    rightArm.rotation.x = -Math.sin(pt * Math.PI) * 1.6;
+    rForearmGroup.rotation.x = (1 - Math.sin(pt * Math.PI)) * 0.30;
   } else {
     rightArm.rotation.x = swing * 0.6;
+    rForearmGroup.rotation.x = Math.abs(swing) * 0.30;
   }
 
   } // end !isGhost physics block
@@ -5682,18 +5641,29 @@ function loop(now) {
     peer.leftLeg.rotation.x  =  ps;
     peer.rightLeg.rotation.x = -ps;
 
+    // Knee bend — forward-swinging leg bends
+    if (peer.lKneeGroup) {
+      peer.lKneeGroup.rotation.x = Math.max(0,  ps) * 0.60;
+      peer.rKneeGroup.rotation.x = Math.max(0, -ps) * 0.60;
+    }
+
     // Shield raise (left arm)
     const pTargetLX = peer.blocking ? -1.5 : -ps * 0.6;
     const pTargetLZ = peer.blocking ?  0.05 :  0.15;
     peer.leftArm.rotation.x += (pTargetLX - peer.leftArm.rotation.x) * Math.min(1, dt * 14);
     peer.leftArm.rotation.z += (pTargetLZ - peer.leftArm.rotation.z) * Math.min(1, dt * 14);
+    // Left elbow bend
+    if (peer.lForearmGroup) peer.lForearmGroup.rotation.x = peer.blocking ? 0 : Math.abs(ps) * 0.30;
 
-    // Punch animation (right arm)
+    // Punch animation (right arm + elbow)
     if (peer.punchTimer > 0) {
       peer.punchTimer = Math.max(0, peer.punchTimer - dt);
-      peer.rightArm.rotation.x = -Math.sin((1 - peer.punchTimer / 0.35) * Math.PI) * 1.6;
+      const pt = 1 - peer.punchTimer / 0.35;
+      peer.rightArm.rotation.x = -Math.sin(pt * Math.PI) * 1.6;
+      if (peer.rForearmGroup) peer.rForearmGroup.rotation.x = (1 - Math.sin(pt * Math.PI)) * 0.30;
     } else {
       peer.rightArm.rotation.x = ps * 0.6;
+      if (peer.rForearmGroup) peer.rForearmGroup.rotation.x = Math.abs(ps) * 0.30;
     }
 
     // Ghost body bob
