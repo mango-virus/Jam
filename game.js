@@ -4065,21 +4065,17 @@ function spawnGumball(colorIdx) {
   const mx = gumballMachineGroup.position.x;
   const mz = gumballMachineGroup.position.z;
 
-  // Find the nearest non-dead, non-ghost target (local player + peers), track Y too
-  let tx = playerGroup.position.x, tz = playerGroup.position.z;
-  let ty = playerGroup.position.y + 0.85; // body centre
-  let bestDist = (isDead || isGhost || isSpectating) ? Infinity : Math.hypot(tx - mx, tz - mz);
+  // Build a list of all valid (non-dead, non-ghost) targets and pick one at random
+  const targets = [];
+  if (!isDead && !isGhost && !isSpectating)
+    targets.push({ x: playerGroup.position.x, z: playerGroup.position.z, y: playerGroup.position.y + 0.85 });
   for (const peer of peers.values()) {
     if (peer.isGhost || peer.spectating) continue;
-    const d = Math.hypot(peer.group.position.x - mx, peer.group.position.z - mz);
-    if (d < bestDist) {
-      bestDist = d;
-      tx = peer.group.position.x;
-      tz = peer.group.position.z;
-      ty = peer.group.position.y + 0.85;
-    }
+    targets.push({ x: peer.group.position.x, z: peer.group.position.z, y: peer.group.position.y + 0.85 });
   }
-  if (bestDist === Infinity) return; // no valid targets
+  if (targets.length === 0) return; // no valid targets
+  const chosen = targets[Math.floor(Math.random() * targets.length)];
+  let tx = chosen.x, tz = chosen.z, ty = chosen.y;
 
   const dx = tx - mx, dz = tz - mz;
   const dist = Math.hypot(dx, dz) || 1;
