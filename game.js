@@ -2033,19 +2033,41 @@ function makeGroundItem(type, x, z, id = nextItemId(), surfaceY = null) {
 // Creates a banana peel Three.js group at (x, z) and adds it to the scene.
 function makeBananaPeel(x, z, surfaceY = 0) {
   const g = new THREE.Group();
-  g.position.set(x, surfaceY + 0.03, z);
-  const peelMat = new THREE.MeshStandardMaterial({ color: 0xd4b800, roughness: 0.8, side: THREE.DoubleSide });
-  // 4 flaps radiating out
+  g.position.set(x, surfaceY + 0.01, z); // +0.01 avoids z-fighting with platform
+
+  const yMat  = new THREE.MeshStandardMaterial({ color: 0xffe135, roughness: 0.60 });
+  const dkMat = new THREE.MeshStandardMaterial({ color: 0x3d2000, roughness: 0.90 });
+
+  // Central hub where the 4 flaps meet
+  const hub = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.06, 0.12), yMat);
+  hub.position.y = 0.03;
+  g.add(hub);
+
+  // Dark stem nub on top
+  const stem = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.09, 0.07), dkMat);
+  stem.position.y = 0.09;
+  g.add(stem);
+
+  // 4 peel flaps fanning outward; each flap has two segments that curl upward
+  // at the tip to match the reference silhouette.
   for (let i = 0; i < 4; i++) {
-    const angle = (i / 4) * Math.PI * 2;
-    const flap = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.025, 0.30), peelMat);
-    flap.position.set(Math.sin(angle) * 0.16, 0, Math.cos(angle) * 0.16);
-    flap.rotation.y = angle;
+    const flap = new THREE.Group();
+    flap.rotation.y = (i / 4) * Math.PI * 2;
     g.add(flap);
+
+    // Inner segment — flat, radiates from hub
+    const s0 = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.055, 0.20), yMat);
+    s0.position.set(0, 0.028, 0.12);
+    flap.add(s0);
+
+    // Outer segment — curls upward at the tip
+    // rotation.x = -0.52 tilts the far (+Z) end upward by ~0.04 units
+    const s1 = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.055, 0.17), yMat);
+    s1.position.set(0, 0.07, 0.285);
+    s1.rotation.x = -0.52;
+    flap.add(s1);
   }
-  // Center nub
-  const center = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.035, 8), peelMat);
-  g.add(center);
+
   g.rotation.y = Math.random() * Math.PI * 2; // random orientation each time
   scene.add(g);
   return g;
