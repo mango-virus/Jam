@@ -1168,17 +1168,17 @@ function makeCharacter(hexColor) {
   batTape.position.y = -0.10;
   batGroup.add(batTape);
   // Taper from handle to barrel
-  const batTaper = new THREE.Mesh(new THREE.CylinderGeometry(0.060, 0.030, 0.12, 10), batWoodMat);
+  const batTaper = new THREE.Mesh(new THREE.CylinderGeometry(0.062, 0.030, 0.12, 10), batWoodMat);
   batTaper.position.y = 0.14;
   batGroup.add(batTaper);
-  // Barrel (wide hitting end)
-  const batBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.078, 0.060, 0.22, 12), batWoodMat);
-  batBarrel.position.y = 0.31;
+  // Barrel (wide hitting end) — longer for a proper bat silhouette
+  const batBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.084, 0.062, 0.38, 12), batWoodMat);
+  batBarrel.position.y = 0.39;
   batGroup.add(batBarrel);
   // End cap
-  const batCap = new THREE.Mesh(new THREE.SphereGeometry(0.078, 10, 6), batWoodMat);
+  const batCap = new THREE.Mesh(new THREE.SphereGeometry(0.084, 10, 6), batWoodMat);
   batCap.scale.y = 0.55;
-  batCap.position.y = 0.42;
+  batCap.position.y = 0.58;
   batGroup.add(batCap);
   rightArm.add(batGroup);
 
