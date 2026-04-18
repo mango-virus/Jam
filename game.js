@@ -5452,14 +5452,20 @@ function loop(now) {
   // Walked off current surface — check if surface is no longer underfoot
   if (onGround && !hasFallenOff) {
     const surf = getSurfaceBelow(playerGroup.position.x, playerGroup.position.z, playerGroup.position.y);
-    if (surf === null || surf < playerGroup.position.y - 0.1) onGround = false;
+    // Immune players can stand on lava surface (covers tile holes they can't see)
+    const lavaFloorY = (spawnImmunityTimer > 0 && lavaGroup && lavaGroup.position.y > -1.0) ? lavaGroup.position.y : null;
+    const bestSurf = (lavaFloorY !== null && (surf === null || lavaFloorY > surf)) ? lavaFloorY : surf;
+    if (bestSurf === null || bestSurf < playerGroup.position.y - 0.1) onGround = false;
   }
 
   // Landing — snap to highest surface when descending through it
   if (!onGround && !hasFallenOff && velY <= 0) {
     const surf = getSurfaceBelow(playerGroup.position.x, playerGroup.position.z, playerGroup.position.y);
-    if (surf !== null && playerGroup.position.y <= surf + 0.05) {
-      playerGroup.position.y = surf;
+    // Immune players can land on lava surface
+    const lavaFloorY = (spawnImmunityTimer > 0 && lavaGroup && lavaGroup.position.y > -1.0) ? lavaGroup.position.y : null;
+    const bestSurf = (lavaFloorY !== null && (surf === null || lavaFloorY > surf)) ? lavaFloorY : surf;
+    if (bestSurf !== null && playerGroup.position.y <= bestSurf + 0.05) {
+      playerGroup.position.y = bestSurf;
       velY = 0;
       onGround = true;
       hasDoubleJumped = false;
