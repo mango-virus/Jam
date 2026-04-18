@@ -2094,7 +2094,7 @@ function throwBlackHoleGrenade() {
   window.SFX?.blackHoleThrow();
 }
 
-function activateBlackHole(x, z) {
+function activateBlackHole(x, z, surfY = 0) {
   if (blackHoleActive) return;
   blackHoleActive = true;
   blackHoleX = x;
@@ -2103,7 +2103,7 @@ function activateBlackHole(x, z) {
   blackHolePullTimer = 0;
   const bh = makeBlackHoleEffect();
   blackHoleGroup = bh.group;
-  blackHoleGroup.position.set(x, 0.8, z);
+  blackHoleGroup.position.set(x, surfY + 0.8, z);
   scene.add(blackHoleGroup);
   window.SFX?.blackHolePull();
 }
@@ -2544,8 +2544,8 @@ async function setupMultiplayer() {
 
     const [sBHole, onBHole] = room.makeAction('bhole');
     sendBlackHoleAction = sBHole;
-    onBHole(({ x, z }) => {
-      activateBlackHole(x, z);
+    onBHole(({ x, z, y = 0 }) => {
+      activateBlackHole(x, z, y);
     });
 
     room.onPeerJoin((peerId) => {
@@ -5164,14 +5164,25 @@ function loop(now) {
       thrownGrenade.group.position.y += thrownGrenade.velY * dt;
       thrownGrenade.group.position.z += thrownGrenade.velZ * dt;
       thrownGrenade.group.rotation.y += dt * 3;
-      // Landed
-      if (thrownGrenade.group.position.y <= 0.1) {
-        const lx = thrownGrenade.group.position.x;
-        const lz = thrownGrenade.group.position.z;
-        scene.remove(thrownGrenade.group);
-        thrownGrenade = null;
-        activateBlackHole(lx, lz);
-        sendBlackHoleAction?.({ x: lx, z: lz });
+      // Landed — check ground and elevated structure surfaces
+      {
+        const gx = thrownGrenade.group.position.x;
+        const gz = thrownGrenade.group.position.z;
+        const gy = thrownGrenade.group.position.y;
+        // Start with main floor (y=0); matches original off-edge behaviour too
+        let landSurf = 0;
+        // Check elevated platforms — pick the highest surface the grenade is above
+        for (const ep of elevatedPlatforms) {
+          if (!epContains(ep, gx, gz)) continue;
+          if (ep.topY > gy + 0.15) continue; // grenade is currently below this surface (flying under it)
+          if (ep.topY > landSurf) landSurf = ep.topY;
+        }
+        if (gy <= landSurf + 0.1) {
+          scene.remove(thrownGrenade.group);
+          thrownGrenade = null;
+          activateBlackHole(gx, gz, landSurf);
+          sendBlackHoleAction?.({ x: gx, z: gz, y: landSurf });
+        }
       }
     }
 
