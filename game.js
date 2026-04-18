@@ -5475,16 +5475,16 @@ function loop(now) {
     punchTimer = Math.max(0, punchTimer - dt);
     const pt = 1 - punchTimer / 0.35;
     if (hasSword) {
-      // Overhead slash — quick raise, then full downswing
-      if (pt < 0.22) {
-        // Raise: arm sweeps back overhead, elbow folds
-        const t = pt / 0.22;
-        rightArm.rotation.x      = t * 1.9;
-        rForearmGroup.rotation.x = 0.30 + t * 0.85;
+      // Overhead slash — raise arm straight up, then drive forward and down
+      if (pt < 0.25) {
+        // Raise: arm sweeps up to near-vertical overhead position
+        const t = pt / 0.25;
+        rightArm.rotation.x      = t * 2.9;           // 0 → +2.9 (~overhead, arm pointing up)
+        rForearmGroup.rotation.x = 0.30 + t * 0.85;   // elbow folds in preparation
       } else {
-        // Slash: arm drives forward and down, elbow snaps straight
-        const t = (pt - 0.22) / 0.78;
-        rightArm.rotation.x      = 1.9 - t * 3.1;   // +1.9 → -1.2
+        // Slash: crash arm down and forward, elbow snaps out on impact
+        const t = (pt - 0.25) / 0.75;
+        rightArm.rotation.x      = 2.9 - t * 4.4;     // +2.9 → -1.5 (overhead → forward-down)
         rForearmGroup.rotation.x = Math.max(0, 1.15 * (1 - t));
       }
     } else {
@@ -5676,14 +5676,14 @@ function loop(now) {
       peer.punchTimer = Math.max(0, peer.punchTimer - dt);
       const pt = 1 - peer.punchTimer / 0.35;
       if (peer.pSword) {
-        // Overhead slash — quick raise, then full downswing
-        if (pt < 0.22) {
-          const t = pt / 0.22;
-          peer.rightArm.rotation.x = t * 1.9;
+        // Overhead slash — raise arm to vertical, then crash down
+        if (pt < 0.25) {
+          const t = pt / 0.25;
+          peer.rightArm.rotation.x = t * 2.9;
           if (peer.rForearmGroup) peer.rForearmGroup.rotation.x = 0.30 + t * 0.85;
         } else {
-          const t = (pt - 0.22) / 0.78;
-          peer.rightArm.rotation.x = 1.9 - t * 3.1;
+          const t = (pt - 0.25) / 0.75;
+          peer.rightArm.rotation.x = 2.9 - t * 4.4;
           if (peer.rForearmGroup) peer.rForearmGroup.rotation.x = Math.max(0, 1.15 * (1 - t));
         }
       } else {
