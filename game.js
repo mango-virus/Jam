@@ -5475,18 +5475,11 @@ function loop(now) {
     punchTimer = Math.max(0, punchTimer - dt);
     const pt = 1 - punchTimer / 0.35;
     if (hasSword) {
-      // Overhead slash — arm raises forward-and-up (negative arc), then crashes down toward target
-      if (pt < 0.25) {
-        // Raise: sweep arm forward then overhead (0 → -2.8, through front arc)
-        const t = pt / 0.25;
-        rightArm.rotation.x      = -t * 2.8;          // 0 → -2.8 (overhead from front)
-        rForearmGroup.rotation.x = 0.30 + t * 0.85;   // elbow folds
-      } else {
-        // Slash: drive arm down-forward through the target (-2.8 → -0.8)
-        const t = (pt - 0.25) / 0.75;
-        rightArm.rotation.x      = -2.8 + t * 2.0;    // -2.8 → -0.8 (overhead → forward-down)
-        rForearmGroup.rotation.x = Math.max(0, 1.15 * (1 - t));
-      }
+      // Overhead slash — arm is at overhead from the moment the attack fires,
+      // then slashes straight down-forward through the target.
+      // pt=0: arm overhead (-2.8 ≈ arm pointing up); pt=1: arm forward-low (-0.4).
+      rightArm.rotation.x      = -2.8 + pt * 2.4;          // -2.8 → -0.4
+      rForearmGroup.rotation.x = Math.max(0, 1.1 - pt * 1.1); // elbow straight on impact
     } else {
       // Forward jab — elbow starts bent, arm extends and straightens, then retracts
       rightArm.rotation.x      = -Math.sin(pt * Math.PI) * 1.8;
@@ -5676,16 +5669,9 @@ function loop(now) {
       peer.punchTimer = Math.max(0, peer.punchTimer - dt);
       const pt = 1 - peer.punchTimer / 0.35;
       if (peer.pSword) {
-        // Overhead slash — forward arc to overhead, then slash down
-        if (pt < 0.25) {
-          const t = pt / 0.25;
-          peer.rightArm.rotation.x = -t * 2.8;
-          if (peer.rForearmGroup) peer.rForearmGroup.rotation.x = 0.30 + t * 0.85;
-        } else {
-          const t = (pt - 0.25) / 0.75;
-          peer.rightArm.rotation.x = -2.8 + t * 2.0;
-          if (peer.rForearmGroup) peer.rForearmGroup.rotation.x = Math.max(0, 1.15 * (1 - t));
-        }
+        // Overhead slash — arm overhead at pt=0, slashes down-forward
+        peer.rightArm.rotation.x = -2.8 + pt * 2.4;
+        if (peer.rForearmGroup) peer.rForearmGroup.rotation.x = Math.max(0, 1.1 - pt * 1.1);
       } else {
         // Forward jab — elbow starts bent, extends straight, retracts
         peer.rightArm.rotation.x = -Math.sin(pt * Math.PI) * 1.8;
