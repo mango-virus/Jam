@@ -685,10 +685,12 @@ function rebuildArena(seed) {
     addMesh(new THREE.BoxGeometry(BT, BT*0.6, BD), boxDark, rwx, BH, rwz, boxAng);
 
     // Label on front face: orange stripe, white title block, crayon-count badge
-    addMesh(new THREE.BoxGeometry(BW, BH*0.30, 0.10), mkM(0xFF5500,0.50), fwx, BH*0.88, fwz, boxAng); // top stripe
-    addMesh(new THREE.BoxGeometry(BW*0.72, BH*0.52, 0.10), mkM(0xFFFFFF,0.32), fwx, BH*0.50, fwz, boxAng); // title block
-    addMesh(new THREE.BoxGeometry(BH*0.44, BH*0.44, 0.12), mkM(0xFF3300,0.45), fwx, BH*0.82, fwz, boxAng); // count badge
-    addMesh(new THREE.BoxGeometry(BH*0.22, BH*0.22, 0.13), mkM(0xFFFFFF,0.30), fwx, BH*0.82, fwz, boxAng);
+    // Centre the label just past the outer wall face so it very slightly protrudes
+    const [lbx, lbz] = brp(0, -BD/2 - BT * 0.5 + 0.04);
+    addMesh(new THREE.BoxGeometry(BW, BH*0.30, 0.10), mkM(0xFF5500,0.50), lbx, BH*0.88, lbz, boxAng); // top stripe
+    addMesh(new THREE.BoxGeometry(BW*0.72, BH*0.52, 0.10), mkM(0xFFFFFF,0.32), lbx, BH*0.50, lbz, boxAng); // title block
+    addMesh(new THREE.BoxGeometry(BH*0.44, BH*0.44, 0.12), mkM(0xFF3300,0.45), lbx, BH*0.82, lbz, boxAng); // count badge
+    addMesh(new THREE.BoxGeometry(BH*0.22, BH*0.22, 0.13), mkM(0xFFFFFF,0.30), lbx, BH*0.82, lbz, boxAng);
 
     // Corner reinforcement strips
     for (const [lx2,lz2] of [[BW/2,BD/2],[BW/2,-BD/2],[-BW/2,BD/2],[-BW/2,-BD/2]]) {
