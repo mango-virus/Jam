@@ -2876,6 +2876,7 @@ const EVENT_ANNOUNCE_S      = 5;
 const EVENT_ANNOUNCE_LINGER = 5;    // extra seconds announcement stays up once event starts
 const RAIN_BANANAS_DURATION = 25;
 const fallingBananas        = [];   // { group, x, z, velY, peelId, rotVX, rotVZ }
+const explosionBodyPieces   = [];   // { mesh, velX, velY, velZ, rotX, rotY, rotZ, life }
 let eventCount              = 0;    // increments each time an event ends (for cycling)
 const EVENT_TYPES           = ['loot_goblin', 'clouds_alive', 'rain_bananas', 'lava_floor', 'hot_potato', 'gumball_cannon'];
 let eventDeck               = [];   // shuffled event order — no repeats until full cycle done
@@ -3188,6 +3189,64 @@ function dropItemsOnDeath() {
   updateDurabilityHUD();
 }
 
+function clearExplosionPieces() {
+  for (const p of explosionBodyPieces) {
+    scene.remove(p.mesh);
+    p.mesh.geometry.dispose();
+    p.mesh.material.dispose();
+  }
+  explosionBodyPieces.length = 0;
+}
+
+function spawnExplosionPieces() {
+  // Sample colors from the live body meshes
+  const bodyColor = leftArm.children[0].material.color.clone();
+  const legColor  = leftLeg.material.color.clone();
+  const skinColor = new THREE.Color(0xffcca0);
+  const nb_y = 0.10; // normalBody.position.y
+
+  // [localX, localY, localZ, width, height, depth, color]
+  // Arm y: pivot at 0.92, mesh center at -0.275 → 0.92 - 0.275 = 0.645
+  const defs = [
+    [0,      nb_y + 0.675, 0,    0.5,  0.55, 0.3,  bodyColor],  // torso
+    [0,      nb_y + 1.22,  0,    0.35, 0.35, 0.35, skinColor],  // head
+    [-0.34,  nb_y + 0.645, 0,    0.15, 0.55, 0.15, bodyColor],  // left arm
+    [ 0.34,  nb_y + 0.645, 0,    0.15, 0.55, 0.15, bodyColor],  // right arm
+    [-0.13,  nb_y + 0.15,  0,    0.17, 0.5,  0.17, legColor],   // left leg
+    [ 0.13,  nb_y + 0.15,  0,    0.17, 0.5,  0.17, legColor],   // right leg
+  ];
+
+  for (const [lx, ly, lz, w, h, d, col] of defs) {
+    // Convert local body-part position to world space (accounts for player yaw)
+    const wp   = playerGroup.localToWorld(new THREE.Vector3(lx, ly, lz));
+    const geo  = new THREE.BoxGeometry(w, h, d);
+    const mat  = new THREE.MeshStandardMaterial({ color: col.clone(), roughness: 0.5 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.copy(wp);
+    mesh.castShadow = true;
+    scene.add(mesh);
+
+    // Outward direction in world space from player center, with randomness
+    const cx  = wp.x - playerGroup.position.x;
+    const cz  = wp.z - playerGroup.position.z;
+    const ox  = cx + (Math.random() - 0.5) * 2.0;
+    const oz  = cz + (Math.random() - 0.5) * 2.0;
+    const len = Math.sqrt(ox * ox + oz * oz) || 1;
+    const spd = 4 + Math.random() * 5;
+
+    explosionBodyPieces.push({
+      mesh,
+      velX: (ox / len) * spd,
+      velY: 3 + Math.random() * 5,
+      velZ: (oz / len) * spd,
+      rotX: (Math.random() - 0.5) * 10,
+      rotY: (Math.random() - 0.5) * 10,
+      rotZ: (Math.random() - 0.5) * 10,
+      life: 1.8,
+    });
+  }
+}
+
 function die(opts = {}) {
   if (isSpectating) return;
   if (isDead || isGhost) return;
@@ -3198,9 +3257,15 @@ function die(opts = {}) {
   burnDeath      = !!opts.burn;
   explosionDeath = !!opts.explode;
   deathTimer = homeRunDeath ? 4.0 : 2.0;
-  if (explosionDeath)   window.SFX?.bombExplode();
-  else if (burnDeath)   window.SFX?.lavaBurn();
-  else                  window.SFX?.die();
+  if (explosionDeath) {
+    window.SFX?.bombExplode();
+    playerNormalBody.visible = false;
+    spawnExplosionPieces();
+  } else if (burnDeath) {
+    window.SFX?.lavaBurn();
+  } else {
+    window.SFX?.die();
+  }
   if (!homeRunDeath) {
     velY = 0; velX = 0; velZ = 0; windVelX = 0; windVelZ = 0;
     hasFallenOff = true; // prevent physics re-landing
@@ -3248,6 +3313,8 @@ function respawn() {
   homeRunDeath   = false;
   burnDeath      = false;
   explosionDeath = false;
+  clearExplosionPieces();
+  playerNormalBody.visible = true;
   if (deathEl) { deathEl.classList.remove('burn'); deathEl.classList.remove('explode'); }
   window.SFX?.respawn();
   if (gameState === 'playing' && localLives <= 0) {
@@ -3382,6 +3449,8 @@ function returnToLobby() {
   playerGroup.position.set(0, 1, 0);
   velY = 0; velX = 0; velZ = 0; windVelX = 0; windVelZ = 0;
   onGround = false;
+  clearExplosionPieces();
+  playerNormalBody.visible = true;
   if (deathEl) deathEl.style.display = 'none';
   if (gameOverEl) gameOverEl.classList.remove('active');
   // Show menu and refresh name field
@@ -3428,6 +3497,8 @@ function startGame(seed, broadcast) {
   isBubbleTrapped = false; bubbleTrappedTimer = 0;
   if (localBubbleMesh) { playerGroup.remove(localBubbleMesh); localBubbleMesh = null; }
   explosionEffects.length = 0;
+  clearExplosionPieces();
+  playerNormalBody.visible = true;
   // Reset black hole grenade
   hasBlackHoleGrenade = false;
   playerGrenade.visible = false;
@@ -5498,6 +5569,25 @@ function loop(now) {
 
   } // end !isGhost physics block
   } // end !isSpectating physics block
+
+  // --- Explosion body pieces physics ---
+  for (let _i = explosionBodyPieces.length - 1; _i >= 0; _i--) {
+    const _p = explosionBodyPieces[_i];
+    _p.velY -= 14 * dt;
+    _p.mesh.position.x += _p.velX * dt;
+    _p.mesh.position.y += _p.velY * dt;
+    _p.mesh.position.z += _p.velZ * dt;
+    _p.mesh.rotation.x += _p.rotX * dt;
+    _p.mesh.rotation.y += _p.rotY * dt;
+    _p.mesh.rotation.z += _p.rotZ * dt;
+    _p.life -= dt;
+    if (_p.life <= 0) {
+      scene.remove(_p.mesh);
+      _p.mesh.geometry.dispose();
+      _p.mesh.material.dispose();
+      explosionBodyPieces.splice(_i, 1);
+    }
+  }
 
   // --- Camera ---
   if (gameState === 'playing' && !isSpectating) {
