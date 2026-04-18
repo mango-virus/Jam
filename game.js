@@ -280,6 +280,9 @@ function rebuildArena(seed) {
     for (const sign of [-1, 1]) {
       const [armCX, armCZ] = rp(sign * 1.9*S, midLocZ);
       addMesh(new THREE.BoxGeometry(0.50*S, 0.22*S, armLen + 0.10*S), DARK, armCX, armY, armCZ, ang);
+      // Armrest collision — solid EP; bottomY gates it so floor-level players
+      // walking under the chair aren't pushed by the armrest footprint
+      addEP(armCX, armCZ, 0.25*S, (armLen + 0.10*S) / 2, armY + 0.11*S, ang, false, SEAT_TOP);
       // Back sphere — sits exactly on back upright → visually attached
       const [bpX, bpZ] = rp(sign * 1.9*S, backLocZ);
       addMesh(new THREE.SphereGeometry(0.20*S, 8, 6), DARK, bpX, armY, bpZ);
