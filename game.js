@@ -1562,60 +1562,49 @@ function makeCharacter(hexColor) {
   ghostBody.visible = false;
   group.add(ghostBody);
 
+  // Voxel ghost — opaque blocky style matching the reference art
   const ghostMat = new THREE.MeshStandardMaterial({
-    color: 0xd8eeff,
-    emissive: new THREE.Color(0x66aaff).multiplyScalar(0.35),
-    roughness: 0.25,
-    transparent: true,
-    opacity: 0.92,
+    color: 0xedf4ff,
+    emissive: new THREE.Color(0x88bbff).multiplyScalar(0.06),
+    roughness: 0.55,
   });
+  const ghostDarkMat = new THREE.MeshStandardMaterial({ color: 0x0a0a0a, roughness: 0.9 });
 
-  // Large rounded head blob
-  const gHead = new THREE.Mesh(new THREE.SphereGeometry(0.38, 14, 10), ghostMat);
-  gHead.scale.set(1, 1.18, 1);
-  gHead.position.y = 1.08;
-  ghostBody.add(gHead);
-
-  // Body cylinder — connects head to wispy bottom
-  const gTorso = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.30, 0.52, 14), ghostMat);
-  gTorso.position.y = 0.64;
-  ghostBody.add(gTorso);
-
-  // Wispy tail strands — inverted cones (wide at top, tip hangs down)
-  const tailDefs = [
-    { x: -0.13, z:  0.06, rx: -0.18, rz:  0.15 },
-    { x:  0.04, z: -0.16, rx:  0.14, rz: -0.10 },
-    { x:  0.14, z:  0.13, rx:  0.08, rz:  0.20 },
-  ];
-  for (const td of tailDefs) {
-    const tail = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.46, 8), ghostMat);
-    tail.rotation.x = Math.PI + td.rx; // flip so tip points down, then tilt
-    tail.rotation.z = td.rz;
-    tail.position.set(td.x, 0.30, td.z);
-    ghostBody.add(tail);
+  // Helper so we don't repeat ghostBody.add and castShadow
+  function gBox(w, h, d, mat, x, y, z) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    m.position.set(x, y, z);
+    m.castShadow = true;
+    ghostBody.add(m);
+    return m;
   }
 
-  // Hollow glowing eyes
-  const ghostEyeMat = new THREE.MeshStandardMaterial({
-    color: 0x001122,
-    emissive: new THREE.Color(0x00ddff),
-    emissiveIntensity: 1.2,
-    roughness: 0.1,
-  });
-  for (const ex of [-0.14, 0.14]) {
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.074, 10, 8), ghostEyeMat);
-    eye.position.set(ex, 1.16, 0.35);
-    ghostBody.add(eye);
-    // Small inner pupil — pure black void
-    const void_ = new THREE.Mesh(new THREE.SphereGeometry(0.038, 8, 6),
-      new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 1 }));
-    void_.position.set(ex, 1.16, 0.415);
-    ghostBody.add(void_);
-  }
+  // ── Stepped skirt / robe hem (3 tiers, widest at bottom) ──
+  gBox(0.76, 0.14, 0.68, ghostMat,  0, 0.07, 0); // tier 1 — bottom/widest
+  gBox(0.66, 0.13, 0.58, ghostMat,  0, 0.21, 0); // tier 2
+  gBox(0.57, 0.12, 0.49, ghostMat,  0, 0.34, 0); // tier 3 — top (blends into body)
 
-  // Ghost point light — soft cyan glow
-  const ghostGlow = new THREE.PointLight(0x88ddff, 2.8, 6);
-  ghostGlow.position.y = 0.9;
+  // ── Main body block ──
+  gBox(0.52, 0.80, 0.44, ghostMat,  0, 0.76, 0); // body: y 0.36 → 1.16
+
+  // ── Flat head cap (wider than body, two-step) ──
+  gBox(0.64, 0.14, 0.54, ghostMat,  0, 1.23, 0); // wide brim: y 1.16 → 1.30
+  gBox(0.56, 0.09, 0.46, ghostMat,  0, 1.35, 0); // inner step on top
+
+  // ── Arm stubs ──
+  gBox(0.16, 0.22, 0.28, ghostMat, -0.34, 0.74, 0); // left
+  gBox(0.16, 0.22, 0.28, ghostMat,  0.34, 0.74, 0); // right
+
+  // ── Face features — dark boxes on the front face (z=0.22) ──
+  // Eyes: large square holes in upper body
+  gBox(0.14, 0.15, 0.04, ghostDarkMat, -0.13, 0.97, 0.24);
+  gBox(0.14, 0.15, 0.04, ghostDarkMat,  0.13, 0.97, 0.24);
+  // Mouth: wide rectangular slit below eyes
+  gBox(0.22, 0.09, 0.04, ghostDarkMat,  0.00, 0.81, 0.24);
+
+  // ── Ghost point light — soft cyan glow ──
+  const ghostGlow = new THREE.PointLight(0x88ddff, 2.2, 5);
+  ghostGlow.position.y = 0.8;
   ghostBody.add(ghostGlow);
 
   // Rocket boots — parented to each leg so they swing with foot movement.
@@ -2872,6 +2861,7 @@ let gameState          = 'lobby';   // 'lobby' | 'playing' | 'gameover'
 let localLives         = 3;
 let isGhost            = false;
 let ghostPunchCooldown = 0;
+let ghostPunchAnim     = 0; // animation timer for ghost punch squash-stretch
 let lastHitBy          = null;      // peer id who last punched us
 let lastHitByWasGhost  = false;
 let hasArmor           = localStorage.getItem('arenaHasArmor') === '1';
@@ -3111,6 +3101,22 @@ function circleOverlap(px, pz, cx, cz, r) {
   return { nx: dx * push, nz: dz * push };
 }
 
+const ghostPunchHudEl  = document.getElementById('ghost-punch-hud');
+const ghostPunchBarEl  = document.getElementById('ghost-punch-bar');
+const ghostPunchTextEl = document.getElementById('ghost-punch-text');
+function updateGhostPunchHUD() {
+  if (!ghostPunchHudEl) return;
+  if (!isGhost || gameState !== 'playing') {
+    ghostPunchHudEl.style.display = 'none';
+    return;
+  }
+  ghostPunchHudEl.style.display = 'block';
+  const ready = ghostPunchCooldown <= 0;
+  ghostPunchHudEl.classList.toggle('ready', ready);
+  if (ghostPunchBarEl)  ghostPunchBarEl.style.width  = ready ? '100%' : ((1 - ghostPunchCooldown / GHOST_PUNCH_CD) * 100) + '%';
+  if (ghostPunchTextEl) ghostPunchTextEl.textContent = ready ? 'READY' : ghostPunchCooldown.toFixed(1) + 's';
+}
+
 function updateLivesHUD() {
   if (!livesHudEl) return;
   if (gameState !== 'playing') { livesHudEl.textContent = ''; return; }
@@ -3166,16 +3172,21 @@ function enterGhostMode() {
   playerNormalBody.visible = false;
   playerGhostBody.visible  = true;
   ghostPunchCooldown = 0;
+  ghostPunchAnim     = 0;
   velY = 0; velX = 0; velZ = 0; windVelX = 0; windVelZ = 0;
   if (deathEl) deathEl.style.display = 'none';
   updateLivesHUD();
+  updateGhostPunchHUD();
 }
 
 function exitGhostMode() {
   isGhost = false;
+  ghostPunchAnim = 0;
+  playerGhostBody.scale.set(1, 1, 1); // reset any in-progress animation
   playerNormalBody.visible = true;
   playerGhostBody.visible  = false;
   updateLivesHUD();
+  updateGhostPunchHUD();
 }
 
 // Called when a ghost killed us — respawn with 1 life
@@ -3599,6 +3610,8 @@ function doPunch() {
   if (isGhost) {
     if (ghostPunchCooldown > 0) return;
     ghostPunchCooldown = GHOST_PUNCH_CD;
+    ghostPunchAnim     = 0.35; // kick off squash-stretch animation
+    window.SFX?.ghostPunch();  // attacker-side sound
     const px = playerGroup.position.x, py = playerGroup.position.y, pz = playerGroup.position.z;
     let nearest = null, nearestDist = PUNCH_RANGE * 1.5;
     for (const [id, peer] of peers) {
@@ -5393,12 +5406,21 @@ function loop(now) {
     if (keys['shift']) playerGroup.position.y -= GHOST_SPEED * dt;
     // Gentle float bob on ghost body
     playerGhostBody.position.y = Math.sin(time * 2.4) * 0.08;
-    // Ghost punch indicator
-    const hint = document.getElementById('hint');
-    if (hint && isLocked) {
-      const cd = ghostPunchCooldown;
-      hint.textContent = cd > 0 ? `👻 Ghost punch ready in ${cd.toFixed(1)}s` : '👻 LMB — Ghost Punch (big knockback)';
+    // Ghost punch squash-and-stretch animation
+    if (ghostPunchAnim > 0) {
+      ghostPunchAnim = Math.max(0, ghostPunchAnim - dt);
+      const t  = 1 - ghostPunchAnim / 0.35;
+      const s  = 1 + Math.sin(t * Math.PI) * 0.40; // horizontal expansion
+      const sy = 1 - Math.sin(t * Math.PI) * 0.20; // vertical squash
+      playerGhostBody.scale.set(s, sy, s);
+    } else {
+      playerGhostBody.scale.set(1, 1, 1);
     }
+    // Hint: just show static instructions; cooldown is shown in the dedicated HUD
+    const hint = document.getElementById('hint');
+    if (hint && isLocked) hint.textContent = '👻 LMB — Ghost Punch (big knockback)';
+    // Update ghost punch HUD every frame while in ghost mode
+    updateGhostPunchHUD();
   } else {
     // Bubble trap locks out WASD steering
     if (isBubbleTrapped) _dir.set(0, 0, 0);

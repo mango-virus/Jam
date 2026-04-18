@@ -171,6 +171,62 @@ body > canvas {
   filter: drop-shadow(0 2px 6px rgba(0,0,0,0.7));
 }
 
+/* Ghost punch cooldown HUD — bottom centre, only visible in ghost mode */
+#ghost-punch-hud {
+  display: none;
+  position: fixed;
+  bottom: 1.6rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  background: rgba(0, 18, 36, 0.78);
+  border: 2px solid rgba(136, 221, 255, 0.40);
+  border-radius: 10px;
+  padding: 5px 14px 7px;
+  text-align: center;
+  pointer-events: none;
+  min-width: 100px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+#ghost-punch-hud.ready {
+  border-color: rgba(0, 255, 200, 0.85);
+  box-shadow: 0 0 12px rgba(0, 255, 200, 0.35);
+}
+#ghost-punch-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+  margin-bottom: 3px;
+}
+#ghost-punch-bar-wrap {
+  width: 80px;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+  overflow: hidden;
+  margin: 2px auto 4px;
+}
+#ghost-punch-bar {
+  height: 100%;
+  width: 0%;
+  background: #88ddff;
+  border-radius: 3px;
+  transition: width 0.1s linear;
+}
+#ghost-punch-hud.ready #ghost-punch-bar {
+  background: #00ffc8;
+  box-shadow: 0 0 6px #00ffc8;
+}
+#ghost-punch-text {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #88ddff;
+  text-transform: uppercase;
+}
+#ghost-punch-hud.ready #ghost-punch-text {
+  color: #00ffc8;
+}
+
 /* Shared overlay base */
 #menu, #game-over {
   display: none;
