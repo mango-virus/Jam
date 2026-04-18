@@ -5475,27 +5475,18 @@ function loop(now) {
     punchTimer = Math.max(0, punchTimer - dt);
     const pt = 1 - punchTimer / 0.35;
     if (hasSword) {
-      // Overhead slash — wind up over shoulder, crash down, brief recovery
-      let armX, elbowX;
-      if (pt < 0.30) {
-        // Wind-up: raise arm up and back, fold elbow
-        const t = pt / 0.30;
-        armX   = t * 2.4;
-        elbowX = 0.30 + t * 1.30;
-      } else if (pt < 0.80) {
-        // Downswing: slam forward, elbow snaps straight on impact
-        const t = (pt - 0.30) / 0.50;
-        const e = t * t * (3 - 2 * t); // smooth-step — accelerates mid-swing
-        armX   = 2.4 - e * 3.8;
-        elbowX = 1.60 * (1 - e);
+      // Overhead slash — quick raise, then full downswing
+      if (pt < 0.22) {
+        // Raise: arm sweeps back overhead, elbow folds
+        const t = pt / 0.22;
+        rightArm.rotation.x      = t * 1.9;
+        rForearmGroup.rotation.x = 0.30 + t * 0.85;
       } else {
-        // Recovery back to rest
-        const t = (pt - 0.80) / 0.20;
-        armX   = -1.4 + t * 1.4;
-        elbowX = t * 0.30;
+        // Slash: arm drives forward and down, elbow snaps straight
+        const t = (pt - 0.22) / 0.78;
+        rightArm.rotation.x      = 1.9 - t * 3.1;   // +1.9 → -1.2
+        rForearmGroup.rotation.x = Math.max(0, 1.15 * (1 - t));
       }
-      rightArm.rotation.x      = armX;
-      rForearmGroup.rotation.x = Math.max(0, elbowX);
     } else {
       // Forward jab — elbow starts bent, arm extends and straightens, then retracts
       rightArm.rotation.x      = -Math.sin(pt * Math.PI) * 1.8;
@@ -5685,24 +5676,16 @@ function loop(now) {
       peer.punchTimer = Math.max(0, peer.punchTimer - dt);
       const pt = 1 - peer.punchTimer / 0.35;
       if (peer.pSword) {
-        // Overhead slash
-        let armX, elbowX;
-        if (pt < 0.30) {
-          const t = pt / 0.30;
-          armX   = t * 2.4;
-          elbowX = 0.30 + t * 1.30;
-        } else if (pt < 0.80) {
-          const t = (pt - 0.30) / 0.50;
-          const e = t * t * (3 - 2 * t);
-          armX   = 2.4 - e * 3.8;
-          elbowX = 1.60 * (1 - e);
+        // Overhead slash — quick raise, then full downswing
+        if (pt < 0.22) {
+          const t = pt / 0.22;
+          peer.rightArm.rotation.x = t * 1.9;
+          if (peer.rForearmGroup) peer.rForearmGroup.rotation.x = 0.30 + t * 0.85;
         } else {
-          const t = (pt - 0.80) / 0.20;
-          armX   = -1.4 + t * 1.4;
-          elbowX = t * 0.30;
+          const t = (pt - 0.22) / 0.78;
+          peer.rightArm.rotation.x = 1.9 - t * 3.1;
+          if (peer.rForearmGroup) peer.rForearmGroup.rotation.x = Math.max(0, 1.15 * (1 - t));
         }
-        peer.rightArm.rotation.x = armX;
-        if (peer.rForearmGroup) peer.rForearmGroup.rotation.x = Math.max(0, elbowX);
       } else {
         // Forward jab — elbow starts bent, extends straight, retracts
         peer.rightArm.rotation.x = -Math.sin(pt * Math.PI) * 1.8;
