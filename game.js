@@ -2479,8 +2479,9 @@ async function setupMultiplayer() {
       onGround = false;
       // Lightning effect on the receiver's end for home-run hits
       if (homeRun) spawnLightningEffect(playerGroup.position.x, playerGroup.position.y, playerGroup.position.z);
-      // Hot Potato: if we're holding the bomb and just got hit by a normal punch, pass it to the attacker
-      if (eventType === 'hot_potato' && hotPotatoHolder === 'local' && !ghostPunch && !homeRun) {
+      // Hot Potato: if we're holding the bomb and just got hit by a normal (non-ghost) punch, pass it back
+      const _punchSender = peers.get(fromPeerId);
+      if (eventType === 'hot_potato' && hotPotatoHolder === 'local' && !ghostPunch && !homeRun && !_punchSender?.isGhost) {
         hotPotatoHolder = fromPeerId;
         sendBombPass?.({ to: fromPeerId });
         window.SFX?.bombPass();
@@ -3640,11 +3641,14 @@ function doPunch() {
       force = homeRun ? BAT_HOME_RUN_KNOCKBACK : BAT_NORMAL_KNOCKBACK;
     }
     sendPunch({ kx: dx / dist, kz: dz / dist, force, homeRun }, id);
-    // Hot Potato: pass the bomb to whoever we just hit
+    // Hot Potato: pass the bomb to whoever we just hit (ghosts can't receive it)
     if (eventType === 'hot_potato' && hotPotatoHolder === 'local') {
-      hotPotatoHolder = id;
-      sendBombPass?.({ to: id }); // broadcast new holder to all peers
-      window.SFX?.bombPass();
+      const hitPeer = peers.get(id);
+      if (!hitPeer?.isGhost) {
+        hotPotatoHolder = id;
+        sendBombPass?.({ to: id }); // broadcast new holder to all peers
+        window.SFX?.bombPass();
+      }
     }
     // Play attacker-side HIT sound
     if (homeRun)           window.SFX?.batHomeRun();
@@ -4322,8 +4326,11 @@ function beginEvent() {
     eventTimer       = hotPotatoMaxTime + 5; // safety cap
     hotPotatoTickTimer = 0;
     hotPotatoFlashOn   = false;
-    // Pick initial holder deterministically from sorted player list
-    const allIds = [localPeerId, ...[...peers.keys()]].filter(Boolean).sort();
+    // Pick initial holder deterministically from sorted non-ghost player list
+    const allIds = [
+      ...(!isGhost ? [localPeerId] : []),
+      ...[...peers.entries()].filter(([, p]) => !p.isGhost).map(([id]) => id),
+    ].filter(Boolean).sort();
     let _hi = (_gameSeed ^ (0xa1a1a1a1 + eventCount)) >>> 0;
     _hi = (Math.imul(_hi, 1664525) + 1013904223) | 0;
     const pickedId = allIds.length > 0 ? allIds[(_hi >>> 0) % allIds.length] : localPeerId;
