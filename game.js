@@ -2466,7 +2466,7 @@ async function setupMultiplayer() {
       if (data.type === 'pre_start') {
         // Host has started the countdown — show the waiting message so players can ready up
         preStartSeed    = data.seed;
-        preStartTimer   = 8.0;
+        preStartTimer   = 6.0;
         preStartIsHost  = false;
         showPreStartMsg(preStartTimer);
         updateMenuReadyList(); // lock the Start button for everyone
@@ -5806,7 +5806,7 @@ if (btnStart) {
   btnStart.addEventListener('click', () => {
     if (!localReady || anyPeerInMatch() || preStartTimer > 0) return;
     preStartSeed    = Date.now() & 0xffffffff;
-    preStartTimer   = 8.0;
+    preStartTimer   = 6.0;
     preStartIsHost  = true;
     sendGameEvent?.({ type: 'pre_start', seed: preStartSeed });
     showPreStartMsg(preStartTimer);
